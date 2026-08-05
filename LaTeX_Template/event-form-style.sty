@@ -1,0 +1,261 @@
+% ============================================================================
+% event-form-style.sty
+%
+% Visual style + reusable macros for the "PDF_mail_registration" event
+% registration form. This file contains ALL styling logic so that the main
+% document (registration_form.tex) can stay short, readable, and easy to
+% edit by anyone who is not a LaTeX expert.
+%
+% You normally do NOT need to touch this file to adapt the form to a new
+% event: change the event details and the field list in
+% registration_form.tex instead. Only edit this file if you want to change
+% the *look* (colors, corner roundness, fonts, page frame, ...).
+% ============================================================================
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{event-form-style}[2026/08/05 v1.0 Event registration form style]
+
+% Make "_" behave as a plain, literal character everywhere in this document
+% (instead of TeX's math-subscript trigger). Without this, hyperref silently
+% strips every underscore from AcroForm field names -- e.g. "reg_first_name"
+% would silently become "regfirstname" in the actual PDF, breaking the
+% documented field-name schema used by the later Python parser. We do not
+% use math mode anywhere in this form, so this is safe.
+\catcode`\_=12
+
+% ---------------------------------------------------------------------------
+% 1. CORE PACKAGES
+% ---------------------------------------------------------------------------
+\RequirePackage[T1]{fontenc}
+\RequirePackage[utf8]{inputenc}
+\RequirePackage[a4paper,margin=13mm]{geometry}
+
+\RequirePackage{tgheros}                 % modern, clean sans-serif font
+\renewcommand{\familydefault}{\sfdefault}
+
+\RequirePackage{xcolor}
+\RequirePackage{tikz}
+\usetikzlibrary{shadings}
+
+\RequirePackage[skins]{tcolorbox}        % rounded boxes for fields/sections
+\tcbuselibrary{breakable}
+
+\RequirePackage{eso-pic}                 % page background painting
+\RequirePackage{enumitem}                % clean bullet/number lists
+\RequirePackage{ragged2e}                % better ragged-right text
+\RequirePackage{array}
+
+% hyperref MUST come after the packages above; it provides the interactive
+% AcroForm commands used below (\TextField, \CheckBox, \Form environment, ...)
+\RequirePackage[
+  pdfusetitle,
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=black
+]{hyperref}
+
+% ---------------------------------------------------------------------------
+% 2. COLOR PALETTE
+%    Change these six lines to re-theme the whole document.
+% ---------------------------------------------------------------------------
+\definecolor{formYellow}{RGB}{255,247,189}   % background gradient - top
+\definecolor{formGreen}{RGB}{214,235,193}    % background gradient - bottom
+\definecolor{cardWhite}{RGB}{255,255,253}    % content card background
+\definecolor{accent}{RGB}{74,124,60}         % headings / labels / rules
+\definecolor{accentSoft}{RGB}{233,241,224}   % soft accent fill (banner, tags)
+\definecolor{fieldBorder}{RGB}{178,201,158}  % rounded field outline
+\definecolor{fieldBg}{RGB}{251,253,248}      % rounded field fill
+\definecolor{textDark}{RGB}{45,45,42}        % body text
+
+\color{textDark}
+\setlength{\parindent}{0pt}   % no paragraph indents anywhere in the form
+
+% ---------------------------------------------------------------------------
+% 3. PAGE DECORATION
+%    Pastel gradient background + rounded black frame + white content card.
+%    Drawn once per page automatically via eso-pic; you never call this
+%    directly from the main document (it is triggered by \StartFormLayout).
+% ---------------------------------------------------------------------------
+\newcommand{\PageDecoration}{%
+  \AddToShipoutPictureBG{%
+    \begin{tikzpicture}[remember picture,overlay]
+      % (a) soft pastel gradient covering the full page
+      \shade[top color=formYellow,bottom color=formGreen]
+        (current page.south west) rectangle (current page.north east);
+      % (b) near-white rounded "card" so body text stays fully legible
+      \fill[cardWhite,opacity=0.93,rounded corners=6mm]
+        ([xshift=7mm,yshift=7mm]current page.south west)
+        rectangle
+        ([xshift=-7mm,yshift=-7mm]current page.north east);
+      % (c) outer rounded black frame
+      \draw[black,line width=1.1pt,rounded corners=8mm]
+        ([xshift=4mm,yshift=4mm]current page.south west)
+        rectangle
+        ([xshift=-4mm,yshift=-4mm]current page.north east);
+    \end{tikzpicture}%
+  }%
+}
+\newcommand{\StartFormLayout}{\PageDecoration}
+
+% ---------------------------------------------------------------------------
+% 4. EVENT METADATA COMMANDS
+%    Set these once at the top of registration_form.tex; they are reused
+%    throughout the header, footer and submission box.
+% ---------------------------------------------------------------------------
+\newcommand{\eventName}[1]{\gdef\@eventName{#1}}
+\newcommand{\eventTagline}[1]{\gdef\@eventTagline{#1}}
+\newcommand{\eventDateText}[1]{\gdef\@eventDateText{#1}}
+\newcommand{\eventLocationText}[1]{\gdef\@eventLocationText{#1}}
+\newcommand{\eventDeadlineText}[1]{\gdef\@eventDeadlineText{#1}}
+\newcommand{\registrationEmail}[1]{\gdef\@registrationEmail{#1}}
+
+\eventName{Event Name}
+\eventTagline{Registration Form}
+\eventDateText{DD Month YYYY}
+\eventLocationText{Venue, City}
+\eventDeadlineText{DD Month YYYY}
+\registrationEmail{registrations@example.org}
+
+% ---------------------------------------------------------------------------
+% 5. HEADER BANNER
+% ---------------------------------------------------------------------------
+\newcommand{\PrintHeader}{%
+  \begin{tcolorbox}[
+    enhanced, colback=accentSoft, colframe=accent,
+    boxrule=0pt, arc=5mm, left=6mm, right=6mm, top=2.5mm, bottom=2.5mm
+  ]
+    \begin{center}
+      {\Large\bfseries\color{accent}\@eventName}\\[1mm]
+      {\normalsize\color{textDark}\@eventTagline}\\[2mm]
+      {\small\color{textDark}
+        \textbf{Date:} \@eventDateText \quad\textbullet\quad
+        \textbf{Location:} \@eventLocationText \quad\textbullet\quad
+        \textbf{Reply by:} \@eventDeadlineText}
+    \end{center}
+  \end{tcolorbox}
+  \vspace{2mm}
+}
+
+% ---------------------------------------------------------------------------
+% 6. SECTION TITLES
+% ---------------------------------------------------------------------------
+\newcommand{\SectionTitle}[1]{%
+  \vspace{1mm}
+  {\large\bfseries\color{accent}#1}\par
+  {\color{accent}\rule[1mm]{\linewidth}{0.8pt}}
+  \vspace{1.5mm}
+}
+
+% ---------------------------------------------------------------------------
+% 7. FORM FIELD MACROS
+%    These are the ONLY commands you need to add/remove/reorder fields.
+%    Every field must be given a unique, stable, English, snake_case NAME:
+%    that name is what the Python parser will later read back out of the
+%    PDF, so never rename an existing field once the form has been sent
+%    out for an event (see LaTeX_Template/README.md for the field list).
+% ---------------------------------------------------------------------------
+
+% --- single-line text field --------------------------------------------
+% \RegField{<visible label>}{<internal field name>}{<box width>}
+\newcommand{\RegField}[3]{%
+  {\small\bfseries\color{accent}#1}\\[0.8mm]
+  \begin{tcolorbox}[
+    width=#3, height=7mm, valign=center,
+    boxrule=0.6pt, arc=2.2mm,
+    colframe=fieldBorder, colback=fieldBg,
+    left=2.5mm, right=2.5mm, top=0.5mm, bottom=0.5mm
+  ]
+    \TextField[name=#2, width=\linewidth, height=4mm,
+      borderwidth=0, backgroundcolor=, color=textDark]{}
+  \end{tcolorbox}
+  \vspace{1.5mm}
+}
+
+% --- multi-line text field (e.g. allergies / dietary notes) ------------
+% \RegFieldMulti{<visible label>}{<internal field name>}{<box width>}{<box height>}
+\newcommand{\RegFieldMulti}[4]{%
+  {\small\bfseries\color{accent}#1}\\[0.8mm]
+  \begin{tcolorbox}[
+    width=#3, height=#4, valign=top,
+    boxrule=0.6pt, arc=2.6mm,
+    colframe=fieldBorder, colback=fieldBg,
+    left=2.5mm, right=2.5mm, top=1.5mm, bottom=1mm
+  ]
+    \TextField[name=#2, width=\linewidth, height=\dimexpr#4-4mm\relax,
+      multiline=true, borderwidth=0, backgroundcolor=, color=textDark]{}
+  \end{tcolorbox}
+  \vspace{1.5mm}
+}
+
+% --- checkbox with a label paragraph next to it -------------------------
+% \RegCheck{<internal field name>}{<label text>}
+\newcommand{\RegCheck}[2]{%
+  \noindent
+  \begin{minipage}[t]{7mm}
+    \begin{tcolorbox}[
+      width=7mm, height=7mm, valign=center,
+      boxrule=0.6pt, arc=1.4mm,
+      colframe=fieldBorder, colback=fieldBg,
+      left=0.4mm, right=0.4mm, top=0.4mm, bottom=0.4mm
+    ]
+      \CheckBox[name=#1, width=4.5mm, height=4.5mm, borderwidth=0]{}
+    \end{tcolorbox}
+  \end{minipage}%
+  \hspace{3mm}%
+  \begin{minipage}[t]{0.86\linewidth}
+    \small\raggedright #2
+  \end{minipage}
+  \par\vspace{1.5mm}
+}
+
+% --- two fields side by side, evenly spaced -----------------------------
+% \FormPair{<left field macro call>}{<right field macro call>}
+\newcommand{\FormPair}[2]{%
+  \noindent
+  \begin{minipage}[t]{0.485\linewidth}#1\end{minipage}\hfill
+  \begin{minipage}[t]{0.485\linewidth}#2\end{minipage}
+  \par
+}
+
+% ---------------------------------------------------------------------------
+% 8. SUBMISSION INSTRUCTIONS BOX (with mailto helper link)
+% ---------------------------------------------------------------------------
+\newcommand{\PrintSubmitBox}{%
+  \vspace{1mm}
+  \begin{tcolorbox}[
+    enhanced, colback=accentSoft, colframe=accent,
+    boxrule=0.8pt, arc=4mm, left=5mm, right=5mm, top=2mm, bottom=2mm
+  ]
+    {\bfseries\color{accent}How to submit this form}\\[1mm]
+    \small
+    \begin{enumerate}[leftmargin=5mm,itemsep=0.5mm,topsep=0.5mm]
+      \item Open this PDF in a desktop PDF reader (Adobe Acrobat Reader
+            recommended) and fill in every field above.
+      \item \textbf{Save} the completed file to your computer
+            (File $\rightarrow$ Save As) -- do not print and scan it.
+      \item Attach the saved PDF to a new email and send it to:\\[1mm]
+            \begin{center}
+              \href{mailto:\@registrationEmail?subject=Event\%20Registration}
+                {\bfseries\@registrationEmail}
+            \end{center}
+      \item Keep a copy for yourself. You will not receive an automatic
+            confirmation reply.
+    \end{enumerate}
+    \vspace{-1mm}
+    {\footnotesize\itshape All submitted data is processed locally by the
+      organizer and is never uploaded to a third-party server.}
+  \end{tcolorbox}
+}
+
+% ---------------------------------------------------------------------------
+% 9. FOOTER
+% ---------------------------------------------------------------------------
+\newcommand{\PrintFooter}{%
+  \vfill
+  \begin{center}
+    {\footnotesize\color{accent}\@eventName\ -- Registration Form
+      \quad\textbullet\quad Please reply by \@eventDeadlineText}
+  \end{center}
+}
+
+\endinput

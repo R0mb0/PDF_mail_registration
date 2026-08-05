@@ -1,0 +1,97 @@
+% ============================================================================
+% registration_form.tex
+%
+% Fillable PDF registration form (fresh / modern style, rounded fields,
+% pastel gradient background) for a single event.
+%
+% HOW TO USE THIS TEMPLATE
+%   1. Edit the "EVENT DETAILS" block below (name, date, location, email).
+%   2. Add / remove / reorder fields in the "PARTICIPANT INFORMATION" and
+%      "CONSENT & PREFERENCES" sections using the \RegField, \RegFieldMulti
+%      and \RegCheck macros -- see LaTeX_Template/README.md for the full
+%      list of internal field names expected by the (future) Python parser.
+%   3. Compile with pdflatex (twice, so hyperref settles all references):
+%         pdflatex registration_form.tex
+%         pdflatex registration_form.tex
+%
+% All visual styling (colors, rounded corners, page frame, fonts) lives in
+% event-form-style.sty -- you normally do not need to edit that file.
+% ============================================================================
+
+\documentclass[10pt]{article}
+\usepackage{event-form-style}
+
+% ---------------------------------------------------------------------------
+% EVENT DETAILS -- edit this block for every new event
+% ---------------------------------------------------------------------------
+\eventName{Summer Community Fest 2026}
+\eventTagline{Official Registration Form}
+\eventDateText{20 September 2026}
+\eventLocationText{Riverside Park, Springfield}
+\eventDeadlineText{10 September 2026}
+\registrationEmail{registrations@example.org}
+
+\makeatletter
+\hypersetup{pdftitle={\@eventName\space -- Registration Form}}
+\makeatother
+
+\begin{document}
+\StartFormLayout   % paints the pastel background + rounded frame + card
+\pagestyle{empty}
+
+\begin{Form}       % <-- everything interactive must live inside this Form
+
+\PrintHeader
+
+% ---------------------------------------------------------------------------
+% SECTION 1 -- PARTICIPANT INFORMATION
+% ---------------------------------------------------------------------------
+\SectionTitle{Participant Information}
+
+% First name / Last name
+\FormPair
+  {\RegField{First Name}{reg_first_name}{\linewidth}}
+  {\RegField{Last Name}{reg_last_name}{\linewidth}}
+
+% Date of birth / Place of birth
+\FormPair
+  {\RegField{Date of Birth (DD/MM/YYYY)}{reg_date_of_birth}{\linewidth}}
+  {\RegField{Place of Birth}{reg_place_of_birth}{\linewidth}}
+
+% Residential address (full width)
+\RegField{Residential Address (Street, City, Postal Code)}{reg_address}{\linewidth}
+
+% Phone / Email
+\FormPair
+  {\RegField{Phone Number}{reg_phone}{\linewidth}}
+  {\RegField{Email Address}{reg_email}{\linewidth}}
+
+% Allergies / dietary restrictions (multiline, full width)
+\RegFieldMulti{Allergies or Dietary Restrictions (if any)}{reg_allergies}{\linewidth}{12mm}
+
+% ---------------------------------------------------------------------------
+% SECTION 2 -- CONSENT & PREFERENCES
+% ---------------------------------------------------------------------------
+\SectionTitle{Consent \& Preferences}
+
+\RegCheck{consent_gdpr}{I consent to the processing of my personal data by
+  the organizer for the purpose of managing my registration to this event,
+  in accordance with Regulation (EU) 2016/679 (GDPR). \textbf{Required to
+  participate.}}
+
+\RegCheck{consent_marketing}{I consent to my data being used by the
+  organizer for marketing purposes related to future editions of this
+  event.}
+
+\RegCheck{consent_promotions}{I would like to receive news and information
+  about promotions and offers from the organizer.}
+
+% ---------------------------------------------------------------------------
+% SECTION 3 -- HOW TO SUBMIT
+% ---------------------------------------------------------------------------
+\PrintSubmitBox
+
+\PrintFooter
+
+\end{Form}
+\end{document}
