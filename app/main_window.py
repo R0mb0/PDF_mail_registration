@@ -42,7 +42,14 @@ from panels.formula_bar_panel import FormulaBarPanel
 from panels.preview_panel import PreviewPanel
 from panels.table_panel import TablePanel
 from scaling import SCALE_PRESETS
-from settings import AppSettings
+from settings import (
+    AppSettings,
+    VIEW_FILE_BROWSER_KEY,
+    VIEW_FORMULA_BAR_KEY,
+    VIEW_PREVIEW_KEY,
+    VIEW_SECONDARY_PREVIEW_KEY,
+    VIEW_TABLE_KEY,
+)
 from theme import apply_theme
 
 
@@ -64,6 +71,7 @@ class MainWindow(QMainWindow):
         self._build_panels()
         self._build_central_layout()
         self._build_menu_bar()
+        self._restore_window_state()
 
     # ------------------------------------------------------------------ UI --
     def _build_panels(self) -> None:
@@ -168,27 +176,43 @@ class MainWindow(QMainWindow):
         self.action_redo = _add(self.tr("Avanti"), QKeySequence.StandardKey.Redo, "redo")
 
     def _build_view_menu(self, menu_bar) -> None:
+        # Initial checked state is seeded from the last saved session
+        # (see _restore_window_state / closeEvent) so the app reopens
+        # showing/hiding the same panels the user left it with.
         menu = menu_bar.addMenu(self.tr("&Visualizza"))
 
-        def _toggle_action(label: str, widget: QWidget) -> QAction:
+        def _toggle_action(label: str, widget: QWidget, settings_key: str, default: bool) -> QAction:
             action = QAction(label, self)
             action.setCheckable(True)
-            action.setChecked(True)
+            initial = self._settings.panel_visible(settings_key, default)
             action.toggled.connect(widget.setVisible)
+            # setChecked() only emits toggled on an actual change, and a
+            # fresh QAction already starts unchecked -- so when the restored
+            # value is False, the signal never fires and the widget would
+            # stay visible. Set the widget's visibility explicitly too, to
+            # not depend on that edge case.
+            action.setChecked(initial)
+            widget.setVisible(initial)
             menu.addAction(action)
             return action
 
         self.action_view_file_browser = _toggle_action(
-            self.tr("Esplora cartella"), self.file_browser_panel
+            self.tr("Esplora cartella"),
+            self.file_browser_panel,
+            VIEW_FILE_BROWSER_KEY,
+            True,
         )
         self.action_view_preview = _toggle_action(
-            self.tr("Anteprima PDF"), self.preview_panel
+            self.tr("Anteprima PDF"), self.preview_panel, VIEW_PREVIEW_KEY, True
         )
         self.action_view_formula_bar = _toggle_action(
-            self.tr("Barra dei filtri"), self.formula_bar_panel
+            self.tr("Barra dei filtri"),
+            self.formula_bar_panel,
+            VIEW_FORMULA_BAR_KEY,
+            True,
         )
         self.action_view_table = _toggle_action(
-            self.tr("Tabella dati"), self.table_panel
+            self.tr("Tabella dati"), self.table_panel, VIEW_TABLE_KEY, True
         )
         menu.addSeparator()
 
@@ -198,10 +222,14 @@ class MainWindow(QMainWindow):
             self.tr("Seconda anteprima PDF"), self
         )
         self.action_view_secondary_preview.setCheckable(True)
-        self.action_view_secondary_preview.setChecked(False)
+        secondary_initial = self._settings.panel_visible(
+            VIEW_SECONDARY_PREVIEW_KEY, False
+        )
         self.action_view_secondary_preview.toggled.connect(
             self.preview_panel.secondary_slot.setVisible
         )
+        self.action_view_secondary_preview.setChecked(secondary_initial)
+        self.preview_panel.secondary_slot.setVisible(secondary_initial)
         menu.addAction(self.action_view_secondary_preview)
 
     def _build_options_menu(self, menu_bar) -> None:
@@ -325,3 +353,49 @@ class MainWindow(QMainWindow):
                 feature=feature
             ),
         )
+
+    # ---------------------------------------------------- Session persistence --
+    # Window size/position, splitter proportions (e.g. how much width goes to
+    # the preview vs. the file browser) and panel visibility are restored
+    # here and saved in closeEvent(), so the app reopens exactly as it was
+    # left -- unlike theme/language/scale, this needs no menu entry or
+    # restart: it is captured/restored silently on every close/open.
+    def _restore_window_state(self) -> None:
+        geometry = self._settings.window_geometry()
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        if self._settings.window_maximized():
+            self.showMaximized()
+
+        main_state = self._settings.main_splitter_state()
+        if main_state is not None:
+            self._main_splitter.restoreState(main_state)
+
+        top_state = self._settings.top_splitter_state()
+        if top_state is not None:
+            self._top_splitter.restoreState(top_state)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._settings.set_window_maximized(self.isMaximized())
+        self._settings.set_window_geometry(self.saveGeometry())
+        self._settings.set_main_splitter_state(self._main_splitter.saveState())
+        self._settings.set_top_splitter_state(self._top_splitter.saveState())
+
+        self._settings.set_panel_visible(
+            VIEW_FILE_BROWSER_KEY, self.action_view_file_browser.isChecked()
+        )
+        self._settings.set_panel_visible(
+            VIEW_PREVIEW_KEY, self.action_view_preview.isChecked()
+        )
+        self._settings.set_panel_visible(
+            VIEW_FORMULA_BAR_KEY, self.action_view_formula_bar.isChecked()
+        )
+        self._settings.set_panel_visible(
+            VIEW_TABLE_KEY, self.action_view_table.isChecked()
+        )
+        self._settings.set_panel_visible(
+            VIEW_SECONDARY_PREVIEW_KEY,
+            self.action_view_secondary_preview.isChecked(),
+        )
+
+        super().closeEvent(event)

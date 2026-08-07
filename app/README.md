@@ -40,6 +40,10 @@ python main.py
   new panels in later phases should follow the same convention. Theme
   applies live; language and scale changes ask for a restart (avoids
   partial re-layout bugs).
+- Session persistence: window size/position/maximized state, splitter
+  proportions (how much space each panel gets) and View menu visibility are
+  saved on close and restored on next launch automatically -- no menu entry,
+  no restart needed for these (unlike theme/language/scale).
 - All panel *content* is still placeholder -- folder opening, PDF
   extraction, the data table, the filter engine and the preview are built
   in the following phases.
