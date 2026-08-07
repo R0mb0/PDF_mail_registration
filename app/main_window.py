@@ -17,10 +17,11 @@ panel, matching the spec ("se con il mouse si tocca un lato o un bordo, si
 può ridimensionare l'elemento"). Show/hide per panel is driven by the View
 menu (checkable actions bound to panel.setVisible()).
 
-As of Phase 4: folder open/close, PDF field extraction, the PDF preview
-and the filter pipeline (Excel-subset / SQL filters, manual-edit chips,
-undo/redo) are fully wired. The colored document classification and the
-in-app field editor are still no-ops until their phase lands.
+As of Phase 6: folder open/close, PDF field extraction, the PDF preview,
+the filter pipeline (Excel-subset / SQL filters, manual-edit chips,
+undo/redo), the colored document classification and the in-app field
+editor (double-click a file -> edit its AcroForm fields -> save re-runs
+extraction) are all fully wired.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from core.classification import classify_folder
 from core.extraction_worker import ExtractionWorker
 from core.filter_pipeline import FilterPipeline, FilterPipelineError
 from core.pdf_extraction import SOURCE_FILE_COLUMN, ExtractionResult
+from dialogs.field_editor_dialog import FieldEditorDialog
 from dialogs.progress_dialog import AnalysisProgressDialog
 from i18n import SUPPORTED_LANGUAGES, TranslationManager
 from panels.file_browser_panel import FileBrowserPanel
@@ -95,10 +97,13 @@ class MainWindow(QMainWindow):
 
     def _wire_preview(self) -> None:
         # Single click in the file browser -> preview (FIFO slot logic
-        # lives in PreviewPanel.open_pdf). Double click -> Phase 6's field
-        # editor overlay, not connected yet.
+        # lives in PreviewPanel.open_pdf). Double click -> the in-app field
+        # editor overlay (Phase 6) -- never the system's default PDF app.
         self.file_browser_panel.file_single_clicked.connect(
             self.preview_panel.open_pdf
+        )
+        self.file_browser_panel.file_double_clicked.connect(
+            self._on_file_double_clicked
         )
         # Clicking a colored classification-strip button opens that PDF in
         # preview too -- the highlighting in the browser itself is already
@@ -127,6 +132,17 @@ class MainWindow(QMainWindow):
     def _on_folder_contents_changed(self) -> None:
         if self._current_folder is not None:
             self._run_extraction(self._current_folder)
+
+    def _on_file_double_clicked(self, file_path: str) -> None:
+        # Modal by construction (QDialog.exec()): editing one PDF while the
+        # rest of the app silently keeps running underneath would risk the
+        # user acting on a table that's about to be invalidated anyway.
+        dialog = FieldEditorDialog(Path(file_path), self)
+        if dialog.exec() == FieldEditorDialog.DialogCode.Accepted:
+            # Saving changed the PDF on disk -- per spec this invalidates
+            # the whole downstream table state, so re-run the same full
+            # scan rather than trying to patch just this one row.
+            self._on_folder_contents_changed()
 
     def _wire_filters(self) -> None:
         self.table_panel.set_edit_callback(self._on_cell_edited)
@@ -462,10 +478,11 @@ class MainWindow(QMainWindow):
         self.action_view_secondary_preview.setChecked(False)
 
     def _run_extraction(self, folder: Path) -> None:
-        # Triggered on folder open, and (from Phase 6 onward) again every
-        # time an edited PDF is saved back to disk -- per spec, changing a
-        # PDF invalidates the whole downstream table state, so we simply
-        # re-run the same full scan rather than trying to patch one row.
+        # Triggered on folder open, on file deletion, and every time an
+        # edited PDF is saved back to disk from the field editor -- per
+        # spec, changing a PDF invalidates the whole downstream table
+        # state, so we simply re-run the same full scan rather than
+        # trying to patch one row.
         dialog = AnalysisProgressDialog(self)
         worker = ExtractionWorker(folder, self)
         worker.progress.connect(dialog.set_progress)

@@ -3,9 +3,9 @@ Left panel: folder open/close + a Windows-Explorer-style browser scoped to
 the *.pdf files in the opened folder, the colored classification strip
 (Phase 5), and file deletion (Delete key / right-click, also Phase 5).
 
-Single click on a file emits file_single_clicked (Phase 3 wires this to the
-preview FIFO logic); double click emits file_double_clicked (Phase 6 wires
-this to the in-app field editor overlay).
+Single click on a file emits file_single_clicked (wired to the preview FIFO
+logic); double click emits file_double_clicked (wired to the in-app field
+editor overlay, Phase 6).
 """
 
 from __future__ import annotations

@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Current status (Phase 0 + 1 + 2 + 3 + 4 + 5)
+## Current status (Phase 0 + 1 + 2 + 3 + 4 + 5 + 6)
 
 - Application shell: menu bar (File / Edit / View / Options), dockable and
   resizable panels laid out as specified (file browser top-left, PDF
@@ -131,6 +131,21 @@ python main.py
     exclude them from processing entirely -- that re-runs the same full
     extraction+classification, per the "changing folder contents
     invalidates everything downstream" rule.
+- In-app field editor (`core/pdf_field_io.py` for the read/write logic,
+  no Qt dependency, verified against a real generated PDF -- multi-pass
+  edits, checkbox on/off round-trip and a failure path all checked;
+  `dialogs/field_editor_dialog.py` for the UI): double-clicking a file in
+  the browser -- never the system's default PDF viewer -- opens a modal
+  dialog with one proper widget per AcroForm field (text box, checkbox,
+  dropdown for choice fields; anything else, e.g. a signature field, is
+  shown read-only). Saving writes to a temp file next to the original and
+  only replaces it via an atomic `os.replace()` once the write fully
+  succeeds, so a failure never corrupts the PDF -- a write error is shown
+  in a dialog and the editor stays open with nothing lost. On success,
+  saving triggers the same full extraction+classification re-run as
+  opening the folder does, per the "changing a PDF invalidates the whole
+  downstream table state" rule -- there is no attempt to patch just the
+  edited row in place.
 
 ## Project layout
 
@@ -150,8 +165,10 @@ app/
     classification.py       green/orange/red document classification (Qt-free, unit-tested headlessly)
     excel_formula.py        sandboxed Excel-subset expression evaluator (Qt-free, unit-tested headlessly)
     sql_filter.py           SQL-mode filter via in-memory sqlite3 (Qt-free, unit-tested headlessly)
+    pdf_field_io.py         detailed AcroForm read/write for the field editor (Qt-free, unit-tested headlessly)
   dialogs/
     progress_dialog.py      modal, non-closable "analyzing..." popup with real progress
+    field_editor_dialog.py  in-app PDF field editor opened by double-clicking a file
   panels/
     file_browser_panel.py   left panel (folder open/close, Explorer-style file view, search, colored status strip)
     preview_panel.py        right panel (PDF preview, up to 2 panes)
