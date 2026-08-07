@@ -16,9 +16,11 @@ APP_NAME = "RegistrationManager"
 
 THEME_KEY = "appearance/theme_mode"     # "auto" | "light" | "dark"
 LANGUAGE_KEY = "appearance/language"    # "auto" | ISO 639-1 code, e.g. "it", "en"
+UI_SCALE_KEY = "appearance/ui_scale"    # int percent, e.g. 100, 125, 150
 
 DEFAULT_THEME_MODE = "auto"
 DEFAULT_LANGUAGE = "auto"
+DEFAULT_UI_SCALE = 100
 
 
 class AppSettings:
@@ -41,3 +43,10 @@ class AppSettings:
 
     def set_language(self, code: str) -> None:
         self._settings.setValue(LANGUAGE_KEY, code)
+
+    # --- UI scale ("zoom" of text and fixed-size elements) ------------------
+    def ui_scale_percent(self) -> int:
+        return int(self._settings.value(UI_SCALE_KEY, DEFAULT_UI_SCALE))
+
+    def set_ui_scale_percent(self, percent: int) -> None:
+        self._settings.setValue(UI_SCALE_KEY, percent)

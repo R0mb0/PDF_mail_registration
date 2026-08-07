@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from scaling import px
+
 
 class FileBrowserPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -62,7 +64,7 @@ class FileBrowserPanel(QWidget):
 
         self.classification_strip = QScrollArea()
         self.classification_strip.setWidgetResizable(True)
-        self.classification_strip.setFixedHeight(56)
+        self.classification_strip.setFixedHeight(px(56))
         self.classification_strip.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )

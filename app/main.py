@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 
 from i18n import TranslationManager, resolve_effective_language
 from main_window import MainWindow
+from scaling import apply_ui_scale
 from settings import AppSettings
 from theme import apply_theme, watch_system_theme_changes
 
@@ -27,6 +28,11 @@ def main() -> int:
     app.setApplicationName("RegistrationManager")
 
     settings = AppSettings()
+
+    # Applied before anything else is built, so every widget constructed
+    # afterwards (including MainWindow and all panels) picks up the scaled
+    # font and reads the correct scaling.px() values from the start.
+    apply_ui_scale(app, settings.ui_scale_percent())
 
     translations = TranslationManager(app)
     effective_language = translations.apply(settings.language())

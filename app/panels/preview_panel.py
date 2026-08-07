@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from scaling import px
+
 
 class _PreviewSlot(QWidget):
     """A single PDF preview pane: placeholder text until a PDF is loaded,
@@ -40,7 +42,7 @@ class _PreviewSlot(QWidget):
         self.close_button: QPushButton | None = None
         if closable:
             self.close_button = QPushButton("✕")
-            self.close_button.setFixedSize(20, 20)
+            self.close_button.setFixedSize(px(20), px(20))
             self.close_button.setToolTip(self.tr("Chiudi anteprima"))
             header.addWidget(self.close_button)
         outer.addLayout(header)

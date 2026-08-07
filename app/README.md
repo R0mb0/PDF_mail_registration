@@ -33,6 +33,13 @@ python main.py
   English; the other 4 languages (French, German, Spanish, Portuguese)
   will get real translation files in the polish phase -- for now they fall
   back to Italian source strings.
+- Text/UI scale: 90/100/110/125/150% presets under Options > Dimensione
+  testo, independent from OS display scaling -- accessibility feature so
+  each user can adjust to their own screen/eyesight. Every panel reads
+  fixed pixel sizes through `scaling.px()` instead of hardcoding them, so
+  new panels in later phases should follow the same convention. Theme
+  applies live; language and scale changes ask for a restart (avoids
+  partial re-layout bugs).
 - All panel *content* is still placeholder -- folder opening, PDF
   extraction, the data table, the filter engine and the preview are built
   in the following phases.
@@ -44,6 +51,7 @@ app/
   main.py              entry point
   theme.py             light/dark theme detection + manual override
   i18n.py               language detection + manual override, translation loading
+  scaling.py            UI text/size scale (accessibility "zoom", not OS DPI)
   settings.py          persisted user preferences (QSettings)
   main_window.py        QMainWindow: menu bar + dock widget layout
   panels/

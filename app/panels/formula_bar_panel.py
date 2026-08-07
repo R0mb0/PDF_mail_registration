@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from scaling import px
+
 
 class FormulaBarPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -47,7 +49,7 @@ class FormulaBarPanel(QWidget):
         self.expression_edit.setPlaceholderText(
             self.tr("Scrivi qui una formula Excel o una espressione SQL...")
         )
-        self.expression_edit.setFixedHeight(70)
+        self.expression_edit.setFixedHeight(px(70))
         layout.addWidget(self.expression_edit)
 
         # --- filter chip stack (Phase 4) -------------------------------------
@@ -56,6 +58,6 @@ class FormulaBarPanel(QWidget):
         # spec. Empty placeholder frame for now so the reserved vertical
         # space is visible even before any filter has been applied.
         self.chip_stack = QFrame()
-        self.chip_stack.setFixedHeight(28)
+        self.chip_stack.setFixedHeight(px(28))
         self.chip_stack.setFrameShape(QFrame.NoFrame)
         layout.addWidget(self.chip_stack)

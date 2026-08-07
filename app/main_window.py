@@ -41,6 +41,7 @@ from panels.file_browser_panel import FileBrowserPanel
 from panels.formula_bar_panel import FormulaBarPanel
 from panels.preview_panel import PreviewPanel
 from panels.table_panel import TablePanel
+from scaling import SCALE_PRESETS
 from settings import AppSettings
 from theme import apply_theme
 
@@ -250,6 +251,27 @@ class MainWindow(QMainWindow):
             language_menu.addAction(action)
             self._language_actions[lang.code] = action
 
+        # --- text/UI scale ----------------------------------------------------
+        # Accessibility: independent from OS display scaling. Lets each user
+        # adjust to their own screen and eyesight rather than one fixed size
+        # for everyone.
+        scale_menu = menu.addMenu(self.tr("Dimensione testo"))
+        scale_group = QActionGroup(self)
+        scale_group.setExclusive(True)
+        self._scale_actions: dict[int, QAction] = {}
+        current_scale = self._settings.ui_scale_percent()
+        for percent in SCALE_PRESETS:
+            label = "100% (predefinito)" if percent == 100 else f"{percent}%"
+            action = QAction(self.tr(label), self)
+            action.setCheckable(True)
+            action.setChecked(current_scale == percent)
+            action.triggered.connect(
+                lambda _checked, p=percent: self._set_ui_scale(p)
+            )
+            scale_group.addAction(action)
+            scale_menu.addAction(action)
+            self._scale_actions[percent] = action
+
     # -------------------------------------------------------------- Slots --
     def _on_open_folder(self) -> None:
         self._not_yet_implemented("open_folder")  # Phase 2
@@ -273,17 +295,27 @@ class MainWindow(QMainWindow):
 
     def _set_language(self, pref: str) -> None:
         self._settings.set_language(pref)
-        QMessageBox.information(
-            self,
-            self.tr("Lingua"),
-            self.tr(
-                "La nuova lingua verrà applicata al prossimo avvio "
-                "dell'applicazione."
-            ),
-        )
         # Applying a language change live (re-translating an already-built
         # UI) is handled properly starting Phase 7; for now we persist the
         # preference and ask for a restart, which is honest and simple.
+        self._show_restart_required(self.tr("Lingua"))
+
+    def _set_ui_scale(self, percent: int) -> None:
+        self._settings.set_ui_scale_percent(percent)
+        # Same reasoning as language: fonts and scaling.px() values are read
+        # once at startup by every widget, so a clean restart avoids partial
+        # re-layout glitches instead of trying to live-rescale everything.
+        self._show_restart_required(self.tr("Dimensione testo"))
+
+    def _show_restart_required(self, title: str) -> None:
+        QMessageBox.information(
+            self,
+            title,
+            self.tr(
+                "La modifica verrà applicata al prossimo avvio "
+                "dell'applicazione."
+            ),
+        )
 
     def _not_yet_implemented(self, feature: str) -> None:
         QMessageBox.information(
