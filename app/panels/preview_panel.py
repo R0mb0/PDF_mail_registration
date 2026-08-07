@@ -4,6 +4,14 @@ Right panel: PDF preview, up to two side-by-side panes (FIFO slot logic).
 Phase 1 note: placeholder only. The two preview slots exist as named
 attributes so Phase 3 can wire in QtPdf rendering + FIFO open/replace logic
 without touching the surrounding layout.
+
+There is deliberately no "open PDF" button here: a preview is only ever
+populated by single-clicking a file over in the folder browser panel
+(single click -> preview, double click -> field editor overlay, per spec).
+The first click fills the primary slot, the second fills the secondary
+slot, and any further click replaces whichever slot was opened longest ago
+(FIFO). The secondary slot's own "✕" closes it; there is no way to close
+the primary slot (by design, per spec).
 """
 
 from __future__ import annotations
@@ -56,14 +64,6 @@ class PreviewPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
-
-        top_bar = QHBoxLayout()
-        # Phase 3: opens a file picker for up to two PDFs, feeding the FIFO
-        # slot logic described in the spec.
-        self.open_pdfs_button = QPushButton(self.tr("Apri PDF..."))
-        top_bar.addWidget(self.open_pdfs_button)
-        top_bar.addStretch(1)
-        layout.addLayout(top_bar)
 
         slots_row = QHBoxLayout()
         self.primary_slot = _PreviewSlot(closable=False)
