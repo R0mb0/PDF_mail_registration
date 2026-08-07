@@ -79,6 +79,7 @@ class MainWindow(QMainWindow):
         self._build_panels()
         self._build_central_layout()
         self._build_menu_bar()
+        self._wire_preview()
         self._restore_window_state()
 
     # ------------------------------------------------------------------ UI --
@@ -87,6 +88,25 @@ class MainWindow(QMainWindow):
         self.preview_panel = PreviewPanel()
         self.formula_bar_panel = FormulaBarPanel()
         self.table_panel = TablePanel()
+
+    def _wire_preview(self) -> None:
+        # Single click in the file browser -> preview (FIFO slot logic
+        # lives in PreviewPanel.open_pdf). Double click -> Phase 6's field
+        # editor overlay, not connected yet.
+        self.file_browser_panel.file_single_clicked.connect(
+            self.preview_panel.open_pdf
+        )
+        # The secondary pane's own "✕" and the View menu's checkbox must
+        # stay in sync: closing via "✕" also unchecks the menu action,
+        # which in turn hides the pane through the toggled connection
+        # already set up in _build_view_menu.
+        self.preview_panel.secondary_slot.close_button.clicked.connect(
+            self._on_close_secondary_preview
+        )
+
+    def _on_close_secondary_preview(self) -> None:
+        self.preview_panel.close_secondary()
+        self.action_view_secondary_preview.setChecked(False)
 
     def _build_central_layout(self) -> None:
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -335,10 +355,13 @@ class MainWindow(QMainWindow):
         self.action_open_folder.setEnabled(True)
         self.action_close_folder.setEnabled(False)
         self.file_browser_panel.close_folder()
-        # Reset the table to a blank state -- per spec, closing the folder
-        # "è come riportare l'applicazione allo stato iniziale": any
-        # in-progress edits/filters (Phase 4) are discarded along with it.
+        # Reset the table and both PDF previews to a blank state -- per
+        # spec, closing the folder "è come riportare l'applicazione allo
+        # stato iniziale": any in-progress edits/filters (Phase 4) are
+        # discarded along with it.
         self.table_panel.set_dataframe(pd.DataFrame())
+        self.preview_panel.reset()
+        self.action_view_secondary_preview.setChecked(False)
 
     def _run_extraction(self, folder: Path) -> None:
         # Triggered on folder open, and (from Phase 6 onward) again every

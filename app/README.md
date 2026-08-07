@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Current status (Phase 0 + 1 + 2)
+## Current status (Phase 0 + 1 + 2 + 3)
 
 - Application shell: menu bar (File / Edit / View / Options), dockable and
   resizable panels laid out as specified (file browser top-left, PDF
@@ -69,6 +69,17 @@ python main.py
   cell editable on the spot.
 - Closing the folder discards the table entirely, matching the spec's
   "torna allo stato iniziale."
+- PDF preview: single-clicking a file in the browser opens it in the
+  preview (primary slot first, then secondary, then FIFO-replaces
+  whichever slot was filled longest ago), rendered via PySide6's own
+  QtPdf/QtPdfWidgets (QPdfDocument + QPdfView) -- scrolling and continuous
+  multi-page layout come from that widget for free, plus simple +/- zoom
+  buttons. The secondary pane's "✕" and the View menu's "Seconda
+  anteprima PDF" checkbox are kept in sync with each other. Double-click
+  (-> field editor) is not wired yet -- Phase 6.
+- Excel/SQL filter-mode buttons are mutually exclusive (QButtonGroup) and
+  neither is selected by default; the active one gets a solid accent-color
+  fill so it's unambiguous which mode is in effect.
 
 ## Project layout
 

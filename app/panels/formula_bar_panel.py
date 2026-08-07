@@ -9,6 +9,7 @@ chip stack, undo/redo history and error alerts.
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QFrame,
     QHBoxLayout,
     QPlainTextEdit,
@@ -18,6 +19,18 @@ from PySide6.QtWidgets import (
 )
 
 from scaling import px
+from theme import ACCENT
+
+# Applied to the Excel/SQL mode buttons so the active mode is unmistakable
+# regardless of platform/theme -- solid accent fill + bold text on top of
+# Qt's own native sunken/"pressed" look for a checked QPushButton.
+_MODE_BUTTON_STYLE = (
+    "QPushButton:checked {{"
+    "background-color: rgb({r}, {g}, {b});"
+    "color: white;"
+    "font-weight: bold;"
+    "}}"
+).format(r=ACCENT.red(), g=ACCENT.green(), b=ACCENT.blue())
 
 
 class FormulaBarPanel(QWidget):
@@ -30,13 +43,24 @@ class FormulaBarPanel(QWidget):
         layout.setSpacing(4)
 
         # --- mode toggle + run button -----------------------------------------
-        # Positioned above the expression editor, per spec.
+        # Positioned above the expression editor, per spec. Excel/SQL are
+        # mutually exclusive (QButtonGroup, exclusive) and neither is active
+        # at startup -- the user must explicitly pick a mode before running
+        # an expression.
         mode_row = QHBoxLayout()
         self.excel_mode_button = QPushButton(self.tr("Excel"))
         self.excel_mode_button.setCheckable(True)
-        self.excel_mode_button.setChecked(True)
+        self.excel_mode_button.setStyleSheet(_MODE_BUTTON_STYLE)
+
         self.sql_mode_button = QPushButton(self.tr("SQL"))
         self.sql_mode_button.setCheckable(True)
+        self.sql_mode_button.setStyleSheet(_MODE_BUTTON_STYLE)
+
+        self._mode_group = QButtonGroup(self)
+        self._mode_group.setExclusive(True)
+        self._mode_group.addButton(self.excel_mode_button)
+        self._mode_group.addButton(self.sql_mode_button)
+
         self.run_button = QPushButton(self.tr("Esegui ▶"))
         mode_row.addWidget(self.excel_mode_button)
         mode_row.addWidget(self.sql_mode_button)
@@ -59,5 +83,5 @@ class FormulaBarPanel(QWidget):
         # space is visible even before any filter has been applied.
         self.chip_stack = QFrame()
         self.chip_stack.setFixedHeight(px(28))
-        self.chip_stack.setFrameShape(QFrame.NoFrame)
+        self.chip_stack.setFrameShape(QFrame.Shape.NoFrame)
         layout.addWidget(self.chip_stack)
