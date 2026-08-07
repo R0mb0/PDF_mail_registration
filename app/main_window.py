@@ -17,25 +17,32 @@ panel, matching the spec ("se con il mouse si tocca un lato o un bordo, si
 può ridimensionare l'elemento"). Show/hide per panel is driven by the View
 menu (checkable actions bound to panel.setVisible()).
 
-Phase 1 scope: the shell only. Every action below is created and enabled/
-disabled/checked according to spec, but most are still no-ops (marked with
-a "# Phase N" comment) until their phase lands.
+As of Phase 2: folder open/close and PDF field extraction (into the data
+table) are fully wired. Edit menu actions, the filter bar, the preview and
+the field editor are still no-ops (marked with a "# Phase N" comment)
+until their phase lands.
 """
 
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
+import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QMainWindow,
     QMessageBox,
     QSplitter,
     QWidget,
 )
 
+from core.extraction_worker import ExtractionWorker
+from core.pdf_extraction import ExtractionResult
+from dialogs.progress_dialog import AnalysisProgressDialog
 from i18n import SUPPORTED_LANGUAGES, TranslationManager
 from panels.file_browser_panel import FileBrowserPanel
 from panels.formula_bar_panel import FormulaBarPanel
@@ -63,7 +70,8 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self._settings = settings
         self._translations = translation_manager
-        self._folder_open = False  # Phase 2 sets this from real folder state
+        self._folder_open = False
+        self._current_folder: Path | None = None
 
         self.setWindowTitle(self.tr("Gestione Iscrizioni"))
         self.resize(1280, 820)
@@ -302,17 +310,72 @@ class MainWindow(QMainWindow):
 
     # -------------------------------------------------------------- Slots --
     def _on_open_folder(self) -> None:
-        self._not_yet_implemented("open_folder")  # Phase 2
+        if self._folder_open:
+            return  # button/action are disabled in this state; defensive no-op
+        chosen = QFileDialog.getExistingDirectory(
+            self, self.tr("Apri cartella con i PDF di iscrizione")
+        )
+        if not chosen:
+            return
+        self._open_folder(Path(chosen))
+
+    def _open_folder(self, folder: Path) -> None:
+        self._folder_open = True
+        self._current_folder = folder
+        self.action_open_folder.setEnabled(False)
+        self.action_close_folder.setEnabled(True)
+        self.file_browser_panel.open_folder(folder)
+        self._run_extraction(folder)
 
     def _on_close_folder(self) -> None:
-        self._not_yet_implemented("close_folder")  # Phase 2
+        if not self._folder_open:
+            return
+        self._folder_open = False
+        self._current_folder = None
+        self.action_open_folder.setEnabled(True)
+        self.action_close_folder.setEnabled(False)
+        self.file_browser_panel.close_folder()
+        # Reset the table to a blank state -- per spec, closing the folder
+        # "è come riportare l'applicazione allo stato iniziale": any
+        # in-progress edits/filters (Phase 4) are discarded along with it.
+        self.table_panel.set_dataframe(pd.DataFrame())
+
+    def _run_extraction(self, folder: Path) -> None:
+        # Triggered on folder open, and (from Phase 6 onward) again every
+        # time an edited PDF is saved back to disk -- per spec, changing a
+        # PDF invalidates the whole downstream table state, so we simply
+        # re-run the same full scan rather than trying to patch one row.
+        dialog = AnalysisProgressDialog(self)
+        worker = ExtractionWorker(folder, self)
+        worker.progress.connect(dialog.set_progress)
+        worker.finished_extraction.connect(
+            lambda result: self._on_extraction_finished(result, dialog)
+        )
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+        dialog.exec()
+
+    def _on_extraction_finished(
+        self, result: ExtractionResult, dialog: AnalysisProgressDialog
+    ) -> None:
+        dialog.accept()
+        self.table_panel.set_dataframe(result.dataframe)
+        if result.errors:
+            details = "\n".join(f"- {name}: {msg}" for name, msg in result.errors.items())
+            QMessageBox.warning(
+                self,
+                self.tr("Alcuni file non sono stati letti correttamente"),
+                self.tr(
+                    "{count} file nella cartella non sono stati letti e non "
+                    "compaiono nella tabella:\n\n{details}"
+                ).format(count=len(result.errors), details=details),
+            )
 
     def _on_new_instance(self) -> None:
         # Launch a fresh, independent process of this same app with no
         # folder pre-opened, per spec ("apre una nuova finestra che però non
         # possiede una cartella già aperta").
         import subprocess
-        from pathlib import Path
 
         main_script = Path(__file__).with_name("main.py")
         subprocess.Popen([sys.executable, str(main_script)])
