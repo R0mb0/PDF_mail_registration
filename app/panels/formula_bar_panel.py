@@ -2,22 +2,29 @@
 Filter / formula bar: mode toggle (Excel-subset / SQL) + run button, the
 multiline expression editor, and the row of colored, removable filter chips.
 
-Phase 1 note: placeholder only. Phase 4 wires in the actual filter engine,
-chip stack, undo/redo history and error alerts.
+The actual filter *logic* (core/filter_pipeline.py) knows nothing about
+Qt; this panel is purely presentational plus a couple of signals that
+main_window.py listens to and drives the pipeline with.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QHBoxLayout,
+    QLabel,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from panels.flow_layout import FlowLayout
 from scaling import px
 from theme import ACCENT
 
@@ -31,6 +38,26 @@ _MODE_BUTTON_STYLE = (
     "font-weight: bold;"
     "}}"
 ).format(r=ACCENT.red(), g=ACCENT.green(), b=ACCENT.blue())
+
+# Distinct, readable pastel colors for successive filter chips -- cycles
+# if there are more filters than colors. Text stays dark on all of them.
+_CHIP_COLORS = [
+    "#AEDFF7",  # soft blue
+    "#FFD8A8",  # soft orange
+    "#D6C3F5",  # soft purple
+    "#B7E4C7",  # soft teal-green
+    "#FFC9DE",  # soft pink
+    "#FFF3A0",  # soft yellow
+    "#F5B7B1",  # soft red
+    "#C3D4F5",  # soft indigo
+]
+
+
+@dataclass
+class ChipInfo:
+    label: str
+    tooltip: str
+    removable: bool
 
 
 class FormulaBarPanel(QWidget):
@@ -68,20 +95,88 @@ class FormulaBarPanel(QWidget):
         mode_row.addWidget(self.run_button)
         layout.addLayout(mode_row)
 
-        # --- expression editor (Phase 4: syntax highlighting) -----------------
+        # --- expression editor (Phase 7 polish: syntax highlighting) ----------
         self.expression_edit = QPlainTextEdit()
         self.expression_edit.setPlaceholderText(
-            self.tr("Scrivi qui una formula Excel o una espressione SQL...")
+            self.tr(
+                'Excel: [colonna] = "valore"   AND(...)   OR(...)   '
+                "ISBLANK([colonna])\n"
+                "SQL: SELECT * FROM data WHERE ..."
+            )
         )
         self.expression_edit.setFixedHeight(px(70))
         layout.addWidget(self.expression_edit)
 
-        # --- filter chip stack (Phase 4) -------------------------------------
-        # Horizontal, wrapping row of colored "filtroN [x]" chips, sitting
-        # between the expression editor and the table panel below it, per
-        # spec. Empty placeholder frame for now so the reserved vertical
-        # space is visible even before any filter has been applied.
-        self.chip_stack = QFrame()
-        self.chip_stack.setFixedHeight(px(28))
-        self.chip_stack.setFrameShape(QFrame.Shape.NoFrame)
-        layout.addWidget(self.chip_stack)
+        # --- filter chip stack --------------------------------------------------
+        # Wrapping row of colored "FiltroN [x]" chips, between the
+        # expression editor and the table panel below it, per spec. Only
+        # the last chip's "x" is ever enabled (integrity rule: you can only
+        # remove the most recently applied filter).
+        self._chip_container = QWidget()
+        self._chip_layout = FlowLayout(self._chip_container, margin=0, spacing=6)
+        self._chip_container.setMinimumHeight(px(30))
+        layout.addWidget(self._chip_container)
+
+    # ---------------------------------------------------------------- API --
+    def selected_mode(self) -> str | None:
+        if self.excel_mode_button.isChecked():
+            return "excel"
+        if self.sql_mode_button.isChecked():
+            return "sql"
+        return None
+
+    def expression_text(self) -> str:
+        return self.expression_edit.toPlainText()
+
+    def clear_expression(self) -> None:
+        self.expression_edit.clear()
+
+    def set_chips(self, chips: list[ChipInfo], on_remove_last) -> None:
+        """Rebuild the chip row from scratch -- simple and cheap at the
+        scale of a few dozen filters. `on_remove_last` is called with no
+        arguments when the last chip's "x" is clicked."""
+        while self._chip_layout.count():
+            item = self._chip_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        for index, chip in enumerate(chips):
+            self._chip_layout.addWidget(
+                self._build_chip_widget(chip, index, on_remove_last)
+            )
+
+    # ------------------------------------------------------------- Internal --
+    def _build_chip_widget(self, chip: ChipInfo, index: int, on_remove_last) -> QWidget:
+        color = _CHIP_COLORS[index % len(_CHIP_COLORS)]
+
+        frame = QFrame()
+        frame.setStyleSheet(
+            f"QFrame {{ background-color: {color}; border-radius: {px(10)}px; }}"
+        )
+        frame.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        row = QHBoxLayout(frame)
+        row.setContentsMargins(px(10), px(4), px(6), px(4))
+        row.setSpacing(px(6))
+
+        label = QLabel(chip.label)
+        label.setStyleSheet("color: #1a1a1a; font-weight: 600;")
+        label.setToolTip(chip.tooltip)
+        row.addWidget(label)
+
+        remove_button = QToolButton()
+        remove_button.setText("✕")
+        remove_button.setAutoRaise(True)
+        if chip.removable:
+            remove_button.setEnabled(True)
+            remove_button.setToolTip(self.tr("Rimuovi questo filtro"))
+            remove_button.clicked.connect(on_remove_last)
+        else:
+            remove_button.setEnabled(False)
+            remove_button.setToolTip(
+                self.tr("Puoi rimuovere solo l'ultimo filtro applicato")
+            )
+        row.addWidget(remove_button)
+
+        return frame

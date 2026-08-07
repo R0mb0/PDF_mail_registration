@@ -17,10 +17,10 @@ panel, matching the spec ("se con il mouse si tocca un lato o un bordo, si
 può ridimensionare l'elemento"). Show/hide per panel is driven by the View
 menu (checkable actions bound to panel.setVisible()).
 
-As of Phase 2: folder open/close and PDF field extraction (into the data
-table) are fully wired. Edit menu actions, the filter bar, the preview and
-the field editor are still no-ops (marked with a "# Phase N" comment)
-until their phase lands.
+As of Phase 4: folder open/close, PDF field extraction, the PDF preview
+and the filter pipeline (Excel-subset / SQL filters, manual-edit chips,
+undo/redo) are fully wired. The colored document classification and the
+in-app field editor are still no-ops until their phase lands.
 """
 
 from __future__ import annotations
@@ -41,11 +41,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.extraction_worker import ExtractionWorker
+from core.filter_pipeline import FilterPipeline, FilterPipelineError
 from core.pdf_extraction import ExtractionResult
 from dialogs.progress_dialog import AnalysisProgressDialog
 from i18n import SUPPORTED_LANGUAGES, TranslationManager
 from panels.file_browser_panel import FileBrowserPanel
-from panels.formula_bar_panel import FormulaBarPanel
+from panels.formula_bar_panel import ChipInfo, FormulaBarPanel
 from panels.preview_panel import PreviewPanel
 from panels.table_panel import TablePanel
 from scaling import SCALE_PRESETS
@@ -72,6 +73,7 @@ class MainWindow(QMainWindow):
         self._translations = translation_manager
         self._folder_open = False
         self._current_folder: Path | None = None
+        self._pipeline = FilterPipeline()
 
         self.setWindowTitle(self.tr("Gestione Iscrizioni"))
         self.resize(1280, 820)
@@ -80,6 +82,7 @@ class MainWindow(QMainWindow):
         self._build_central_layout()
         self._build_menu_bar()
         self._wire_preview()
+        self._wire_filters()
         self._restore_window_state()
 
     # ------------------------------------------------------------------ UI --
@@ -107,6 +110,72 @@ class MainWindow(QMainWindow):
     def _on_close_secondary_preview(self) -> None:
         self.preview_panel.close_secondary()
         self.action_view_secondary_preview.setChecked(False)
+
+    def _wire_filters(self) -> None:
+        self.table_panel.set_edit_callback(self._on_cell_edited)
+        self.formula_bar_panel.run_button.clicked.connect(self._on_run_filter)
+
+    # ------------------------------------------------- Filter pipeline glue --
+    # These four methods are the only bridge between the Qt layer and
+    # core/filter_pipeline.py: every action that changes the table's state
+    # (running a filter, editing a cell, undo, redo) goes through the
+    # pipeline first and then re-renders from its current_dataframe(), so
+    # the table, the chip stack and the undo/redo action states can never
+    # drift out of sync with each other.
+    def _on_run_filter(self) -> None:
+        mode = self.formula_bar_panel.selected_mode()
+        if mode is None:
+            QMessageBox.warning(
+                self,
+                self.tr("Nessuna modalità selezionata"),
+                self.tr("Seleziona prima la modalità Excel o SQL."),
+            )
+            return
+
+        expression = self.formula_bar_panel.expression_text()
+        try:
+            self._pipeline.apply_expression_filter(mode, expression)
+        except FilterPipelineError as exc:
+            QMessageBox.warning(self, self.tr("Errore nel filtro"), exc.message)
+            return
+
+        self.formula_bar_panel.clear_expression()
+        self._refresh_table_and_chips()
+
+    def _on_cell_edited(self, row_key: str, column: str, value: str) -> None:
+        self._pipeline.record_manual_edit(row_key, column, value)
+        self._refresh_table_and_chips()
+
+    def _on_remove_last_filter(self) -> None:
+        # Same operation whether triggered by the last chip's "✕" or by
+        # Ctrl+Z -- see core/filter_pipeline.py's docstring for why.
+        self._pipeline.remove_last_step()
+        self._refresh_table_and_chips()
+
+    def _on_redo_filter(self) -> None:
+        self._pipeline.redo()
+        self._refresh_table_and_chips()
+
+    def _refresh_table_and_chips(self) -> None:
+        self.table_panel.set_dataframe(self._pipeline.current_dataframe())
+        self._refresh_chips()
+        self.action_undo.setEnabled(self._pipeline.can_undo())
+        self.action_redo.setEnabled(self._pipeline.can_redo())
+
+    def _refresh_chips(self) -> None:
+        steps = self._pipeline.steps
+        chips: list[ChipInfo] = []
+        for index, step in enumerate(steps):
+            is_last = index == len(steps) - 1
+            label = self.tr("Filtro {n}").format(n=index + 1)
+            if step.kind == "expression":
+                tooltip = f"{(step.mode or '').upper()}: {step.expression}"
+            else:
+                tooltip = self.tr("Modifiche manuali alle celle ({count})").format(
+                    count=len(step.edits)
+                )
+            chips.append(ChipInfo(label=label, tooltip=tooltip, removable=is_last))
+        self.formula_bar_panel.set_chips(chips, self._on_remove_last_filter)
 
     def _build_central_layout(self) -> None:
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -198,10 +267,22 @@ class MainWindow(QMainWindow):
             self.tr("Seleziona niente"), QKeySequence("Ctrl+Shift+A"), "select_none"
         )
         menu.addSeparator()
-        # Phase 4: rides on the filter-pipeline history, not a generic
-        # text-editing undo stack.
-        self.action_undo = _add(self.tr("Indietro"), QKeySequence.StandardKey.Undo, "undo")
-        self.action_redo = _add(self.tr("Avanti"), QKeySequence.StandardKey.Redo, "redo")
+        # Rides on the filter-pipeline history (core/filter_pipeline.py),
+        # not a generic text-editing undo stack: Ctrl+Z removes the last
+        # filter chip (same operation as clicking its "✕"), Ctrl+Y/Shift+
+        # Ctrl+Z brings it back. Both start disabled -- nothing to undo/
+        # redo until a folder is open and at least one filter/edit exists.
+        self.action_undo = QAction(self.tr("Indietro"), self)
+        self.action_undo.setShortcut(QKeySequence.StandardKey.Undo)
+        self.action_undo.setEnabled(False)
+        self.action_undo.triggered.connect(self._on_remove_last_filter)
+        menu.addAction(self.action_undo)
+
+        self.action_redo = QAction(self.tr("Avanti"), self)
+        self.action_redo.setShortcut(QKeySequence.StandardKey.Redo)
+        self.action_redo.setEnabled(False)
+        self.action_redo.triggered.connect(self._on_redo_filter)
+        menu.addAction(self.action_redo)
 
     def _build_view_menu(self, menu_bar) -> None:
         # Initial checked state is seeded from the last saved session
@@ -355,11 +436,11 @@ class MainWindow(QMainWindow):
         self.action_open_folder.setEnabled(True)
         self.action_close_folder.setEnabled(False)
         self.file_browser_panel.close_folder()
-        # Reset the table and both PDF previews to a blank state -- per
-        # spec, closing the folder "è come riportare l'applicazione allo
-        # stato iniziale": any in-progress edits/filters (Phase 4) are
-        # discarded along with it.
-        self.table_panel.set_dataframe(pd.DataFrame())
+        # Reset the table, the filter pipeline (chips + undo/redo history)
+        # and both PDF previews to a blank state -- per spec, closing the
+        # folder "è come riportare l'applicazione allo stato iniziale".
+        self._pipeline.set_base_dataframe(pd.DataFrame())
+        self._refresh_table_and_chips()
         self.preview_panel.reset()
         self.action_view_secondary_preview.setChecked(False)
 
@@ -382,7 +463,10 @@ class MainWindow(QMainWindow):
         self, result: ExtractionResult, dialog: AnalysisProgressDialog
     ) -> None:
         dialog.accept()
-        self.table_panel.set_dataframe(result.dataframe)
+        # A fresh extraction always wipes any previous filter history --
+        # per spec, a changed source PDF invalidates everything downstream.
+        self._pipeline.set_base_dataframe(result.dataframe)
+        self._refresh_table_and_chips()
         if result.errors:
             details = "\n".join(f"- {name}: {msg}" for name, msg in result.errors.items())
             QMessageBox.warning(

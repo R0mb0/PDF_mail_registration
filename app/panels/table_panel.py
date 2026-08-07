@@ -2,9 +2,10 @@
 Bottom panel: the data table (auto row numbers, bold headers, editable
 cells) + the "Esporta dati come..." button.
 
-Phase 2: bound to a real DataFrameTableModel, populated after each folder
-scan. Phase 4 will feed it the *filtered* dataframe instead of the raw
-extraction result; Phase 7 wires the export button to the export dialog.
+As of Phase 4, edits are routed through whatever edit_callback main_window
+wires in via set_edit_callback() -- normally FilterPipeline.record_manual_
+edit() followed by a full refresh -- rather than mutating this panel's
+dataframe directly. Phase 7 wires the export button to the export dialog.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.dataframe_table_model import DataFrameTableModel
+from core.dataframe_table_model import DataFrameTableModel, EditCallback
 
 
 class TablePanel(QWidget):
@@ -54,3 +55,6 @@ class TablePanel(QWidget):
 
     def dataframe(self) -> pd.DataFrame:
         return self._model.dataframe()
+
+    def set_edit_callback(self, callback: EditCallback | None) -> None:
+        self._model.set_edit_callback(callback)

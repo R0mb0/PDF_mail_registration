@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Current status (Phase 0 + 1 + 2 + 3)
+## Current status (Phase 0 + 1 + 2 + 3 + 4)
 
 - Application shell: menu bar (File / Edit / View / Options), dockable and
   resizable panels laid out as specified (file browser top-left, PDF
@@ -80,6 +80,34 @@ python main.py
 - Excel/SQL filter-mode buttons are mutually exclusive (QButtonGroup) and
   neither is selected by default; the active one gets a solid accent-color
   fill so it's unambiguous which mode is in effect.
+- Filter pipeline (`core/filter_pipeline.py`, no Qt dependency, unit-tested
+  headlessly with the exact scenario from the spec: filter -> manual edit
+  -> second manual edit folding into the same chip -> another filter ->
+  undo -> undo -> redo -> new filter clearing the redo stack -> rejected
+  bad formula leaving the pipeline untouched -- all assertions pass).
+  Excel-subset mode (`core/excel_formula.py`) is a hand-written, sandboxed
+  AST evaluator -- no `eval()`/`exec()` anywhere, verified to reject an
+  `__import__(...)` escape attempt -- supporting `[Column Name]`
+  references, `=`/`<>`/comparisons, `AND`/`OR`/`NOT`/`IF`/`ISBLANK`/`TRIM`/
+  `CONCAT`/`LEFT`/`RIGHT`/`LEN`/`UPPER`/`LOWER`. SQL mode
+  (`core/sql_filter.py`) runs the query against an in-memory `sqlite3`
+  table named `data` -- dropped the `duckdb` dependency from
+  requirements.txt in favor of Python's own standard library, one less
+  thing that can fail to install.
+  - Colored, wrapping filter chips (`panels/flow_layout.py` is Qt's
+    standard "Flow Layout" pattern) -- only the last chip's "✕" is
+    enabled, matching the integrity rule that only the most recent filter
+    can be removed.
+  - A manual cell edit only becomes a chip once at least one filter is
+    already active; consecutive edits fold into the same chip until the
+    next filter finalizes it. Removing that chip reverts exactly those
+    cells. The table's "File" column is read-only, since it doubles as
+    the stable row identifier those edits are keyed on.
+  - Ctrl+Z / Ctrl+Y (Edit menu "Indietro"/"Avanti") are literally the same
+    operation as removing/restoring the last chip -- both start disabled
+    and re-enable based on the pipeline's own state.
+  - Bad formula/SQL syntax shows a warning dialog with the underlying
+    error message and leaves the pipeline completely unchanged.
 
 ## Project layout
 
@@ -94,12 +122,16 @@ app/
   core/
     pdf_extraction.py       Qt-free AcroForm field extraction (unit-testable headlessly)
     extraction_worker.py    QThread wrapper around pdf_extraction, for a non-blocking progress popup
-    dataframe_table_model.py  QAbstractTableModel bound to a pandas DataFrame
+    dataframe_table_model.py  QAbstractTableModel bound to a pandas DataFrame, edits routed via callback
+    filter_pipeline.py      the filter/undo-redo stack itself (Qt-free, unit-tested headlessly)
+    excel_formula.py        sandboxed Excel-subset expression evaluator (Qt-free, unit-tested headlessly)
+    sql_filter.py           SQL-mode filter via in-memory sqlite3 (Qt-free, unit-tested headlessly)
   dialogs/
     progress_dialog.py      modal, non-closable "analyzing..." popup with real progress
   panels/
     file_browser_panel.py   left panel (folder open/close, Explorer-style file view, search, colored status strip)
     preview_panel.py        right panel (PDF preview, up to 2 panes)
     formula_bar_panel.py    filter/formula bar + filter chip stack
+    flow_layout.py          Qt's standard wrapping "flow" layout, used by the chip stack
     table_panel.py          data table (DataFrameTableModel-backed) + export button
 ```
