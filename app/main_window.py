@@ -40,9 +40,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.classification import classify_folder
 from core.extraction_worker import ExtractionWorker
 from core.filter_pipeline import FilterPipeline, FilterPipelineError
-from core.pdf_extraction import ExtractionResult
+from core.pdf_extraction import SOURCE_FILE_COLUMN, ExtractionResult
 from dialogs.progress_dialog import AnalysisProgressDialog
 from i18n import SUPPORTED_LANGUAGES, TranslationManager
 from panels.file_browser_panel import FileBrowserPanel
@@ -99,6 +100,12 @@ class MainWindow(QMainWindow):
         self.file_browser_panel.file_single_clicked.connect(
             self.preview_panel.open_pdf
         )
+        # Clicking a colored classification-strip button opens that PDF in
+        # preview too -- the highlighting in the browser itself is already
+        # handled inside FileBrowserPanel before it emits this signal.
+        self.file_browser_panel.classification_file_clicked.connect(
+            self.preview_panel.open_pdf
+        )
         # The secondary pane's own "✕" and the View menu's checkbox must
         # stay in sync: closing via "✕" also unchecks the menu action,
         # which in turn hides the pane through the toggled connection
@@ -106,10 +113,20 @@ class MainWindow(QMainWindow):
         self.preview_panel.secondary_slot.close_button.clicked.connect(
             self._on_close_secondary_preview
         )
+        # Deleting a file (from the browser, Phase 5) is a folder-contents
+        # change -- re-run the same full scan, same as opening a fresh PDF
+        # into the folder would require.
+        self.file_browser_panel.folder_contents_changed.connect(
+            self._on_folder_contents_changed
+        )
 
     def _on_close_secondary_preview(self) -> None:
         self.preview_panel.close_secondary()
         self.action_view_secondary_preview.setChecked(False)
+
+    def _on_folder_contents_changed(self) -> None:
+        if self._current_folder is not None:
+            self._run_extraction(self._current_folder)
 
     def _wire_filters(self) -> None:
         self.table_panel.set_edit_callback(self._on_cell_edited)
@@ -463,10 +480,30 @@ class MainWindow(QMainWindow):
         self, result: ExtractionResult, dialog: AnalysisProgressDialog
     ) -> None:
         dialog.accept()
-        # A fresh extraction always wipes any previous filter history --
-        # per spec, a changed source PDF invalidates everything downstream.
-        self._pipeline.set_base_dataframe(result.dataframe)
+
+        classifications = classify_folder(result.dataframe, result.errors)
+        if self._current_folder is not None:
+            self.file_browser_panel.set_classification(
+                classifications, self._current_folder
+            )
+
+        # Red documents are excluded from the table entirely; orange ones
+        # are included with their blank fields left blank (they already
+        # are, extraction never fabricates values). A fresh extraction
+        # always wipes any previous filter history -- per spec, a changed
+        # source PDF invalidates everything downstream.
+        included_files = {
+            filename
+            for filename, classification in classifications.items()
+            if classification.color != "red"
+        }
+        table_df = result.dataframe[
+            result.dataframe[SOURCE_FILE_COLUMN].isin(included_files)
+        ].reset_index(drop=True)
+
+        self._pipeline.set_base_dataframe(table_df)
         self._refresh_table_and_chips()
+
         if result.errors:
             details = "\n".join(f"- {name}: {msg}" for name, msg in result.errors.items())
             QMessageBox.warning(

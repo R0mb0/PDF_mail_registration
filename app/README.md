@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Current status (Phase 0 + 1 + 2 + 3 + 4)
+## Current status (Phase 0 + 1 + 2 + 3 + 4 + 5)
 
 - Application shell: menu bar (File / Edit / View / Options), dockable and
   resizable panels laid out as specified (file browser top-left, PDF
@@ -108,6 +108,29 @@ python main.py
     and re-enable based on the pipeline's own state.
   - Bad formula/SQL syntax shows a warning dialog with the underlying
     error message and leaves the pipeline completely unchanged.
+- Document classification (`core/classification.py`, no Qt dependency,
+  unit-tested headlessly): every extracted PDF is green/orange/red
+  relative to the folder's own "typical" field structure (majority
+  filled-vs-blank per field), not a hardcoded schema --
+  - **red**: unreadable PDF, or field structure deviating from the
+    typical one by more than 30% -- excluded from the table entirely.
+  - **orange**: a near-duplicate (>30% of its filled fields identical to
+    another document's), or any blank field, or a structural deviation up
+    to 30% -- included, blanks stay blank.
+  - **green**: none of the above.
+  - Known characteristic, not a bug: with very few documents (single
+    digits) a field sitting near a 50/50 filled/blank split across the
+    whole folder makes the majority baseline unstable, which can tip a
+    document into red a bit more eagerly than with a larger, more typical
+    sample -- verified this behaves as expected at a realistic scale (10
+    documents, one isolated blank field correctly lands orange, not red).
+  - The colored strip under the file browser shows one tall button per
+    PDF (including red ones), numbered, with the reasons in its tooltip;
+    clicking one opens it in preview and selects/highlights it in the
+    browser above. Files can be deleted (Delete key or right-click) to
+    exclude them from processing entirely -- that re-runs the same full
+    extraction+classification, per the "changing folder contents
+    invalidates everything downstream" rule.
 
 ## Project layout
 
@@ -124,6 +147,7 @@ app/
     extraction_worker.py    QThread wrapper around pdf_extraction, for a non-blocking progress popup
     dataframe_table_model.py  QAbstractTableModel bound to a pandas DataFrame, edits routed via callback
     filter_pipeline.py      the filter/undo-redo stack itself (Qt-free, unit-tested headlessly)
+    classification.py       green/orange/red document classification (Qt-free, unit-tested headlessly)
     excel_formula.py        sandboxed Excel-subset expression evaluator (Qt-free, unit-tested headlessly)
     sql_filter.py           SQL-mode filter via in-memory sqlite3 (Qt-free, unit-tested headlessly)
   dialogs/
