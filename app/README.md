@@ -73,18 +73,32 @@ python main.py
 - Closing the folder discards the table entirely, matching the spec's
   "torna allo stato iniziale."
 - PDF preview: single-clicking a file in the browser opens it in the
-  preview, rendered via PySide6's own QtPdf/QtPdfWidgets (QPdfDocument +
-  QPdfView) -- scrolling and continuous multi-page layout come from that
-  widget for free, plus simple +/- zoom buttons. The secondary pane is
-  off by default and stays that way until explicitly turned on from
-  View > "Seconda anteprima PDF" (or the pane's own "✕", which just
-  unchecks that same action) -- while it's off there is only ever one
-  usable slot, and every click replaces its content outright; only once
-  it's on does opening a file fill the primary slot first, then the
-  secondary, then FIFO-replace whichever slot was filled longest ago.
-  `PreviewPanel.set_secondary_enabled()` is the single place this is
-  decided, so the pane's visibility and its FIFO eligibility can never
-  drift apart.
+  preview, rendered page-by-page via PySide6's own `QPdfDocument.render()`
+  into a `QLabel`/`QScrollArea`, plus Previous/Next page navigation (shown
+  only for multi-page PDFs) and simple +/- zoom buttons.
+  - Bug found and fixed (via real testing, not synthetic data): this used
+    to render via `QPdfWidgets.QPdfView` instead, which turned out to be
+    a known, independently-documented Qt limitation -- it never draws
+    annotations at all, and AcroForm field values are exactly that
+    visually, so a PDF's compiled/filled fields never showed up in the
+    preview no matter how correctly they were saved (this app's data
+    table, which reads the raw value directly, was never affected --
+    only what you *saw*). Switching to `QPdfDocument.render()` directly
+    with `QPdfDocumentRenderOptions.RenderFlag.Annotations` set is what
+    actually fixes it; QPdfView has no equivalent public option. The
+    trade-off is QPdfView's continuous multi-page scroll, which doesn't
+    apply to a manually rendered single image per page -- acceptable
+    here since this project's own form is one page, and multi-page PDFs
+    still show every page, just one at a time via the nav buttons.
+  - The secondary pane is off by default and stays that way until
+    explicitly turned on from View > "Seconda anteprima PDF" (or the
+    pane's own "✕", which just unchecks that same action) -- while it's
+    off there is only ever one usable slot, and every click replaces its
+    content outright; only once it's on does opening a file fill the
+    primary slot first, then the secondary, then FIFO-replace whichever
+    slot was filled longest ago. `PreviewPanel.set_secondary_enabled()`
+    is the single place this is decided, so the pane's visibility and
+    its FIFO eligibility can never drift apart.
 - Excel/SQL filter-mode buttons are mutually exclusive (QButtonGroup) and
   neither is selected by default; the active one gets a solid accent-color
   fill so it's unambiguous which mode is in effect.

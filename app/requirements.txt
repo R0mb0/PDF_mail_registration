@@ -9,6 +9,6 @@ openpyxl>=3.1        # .xlsx export
 
 # PDF handling
 pypdf>=4.0           # AcroForm field extraction (matches LaTeX_Template field names)
-# PDF page rendering for the preview panes uses PySide6's own QtPdf /
-# QtPdfWidgets modules (QPdfDocument, QPdfView) -- bundled with PySide6
-# itself, no separate package needed.
+# PDF page rendering for the preview panes uses PySide6's own QtPdf module
+# (QPdfDocument.render(), not QPdfWidgets.QPdfView -- see panels/preview_panel.py's
+# docstring for why) -- bundled with PySide6 itself, no separate package needed.
