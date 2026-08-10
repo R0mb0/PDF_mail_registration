@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.classification import classify_folder
+from core.data_export import EXTENSION_BY_FORMAT, FORMAT_BY_EXTENSION, ExportError, export_dataframe
 from core.extraction_worker import ExtractionWorker
 from core.filter_pipeline import FilterPipeline, FilterPipelineError
 from core.pdf_extraction import SOURCE_FILE_COLUMN, ExtractionResult
@@ -126,7 +127,10 @@ class MainWindow(QMainWindow):
         )
 
     def _on_close_secondary_preview(self) -> None:
-        self.preview_panel.close_secondary()
+        # Unchecking the action fires action_view_secondary_preview's own
+        # toggled signal, which calls preview_panel.set_secondary_enabled(False)
+        # -- that single call clears the slot's content AND hides it, so
+        # there's no separate close_secondary() call needed here.
         self.action_view_secondary_preview.setChecked(False)
 
     def _on_folder_contents_changed(self) -> None:
@@ -147,6 +151,7 @@ class MainWindow(QMainWindow):
     def _wire_filters(self) -> None:
         self.table_panel.set_edit_callback(self._on_cell_edited)
         self.formula_bar_panel.run_button.clicked.connect(self._on_run_filter)
+        self.table_panel.export_button.clicked.connect(self._on_export)
 
     # ------------------------------------------------- Filter pipeline glue --
     # These four methods are the only bridge between the Qt layer and
@@ -209,6 +214,53 @@ class MainWindow(QMainWindow):
                 )
             chips.append(ChipInfo(label=label, tooltip=tooltip, removable=is_last))
         self.formula_bar_panel.set_chips(chips, self._on_remove_last_filter)
+
+    # ------------------------------------------------------- Export (Phase 7) --
+    def _on_export(self) -> None:
+        df = self._pipeline.current_dataframe()
+        if df.empty:
+            QMessageBox.information(
+                self,
+                self.tr("Niente da esportare"),
+                self.tr("La tabella è vuota."),
+            )
+            return
+
+        # Default location = the app's own folder, per spec, so there's
+        # always a sensible starting point even before the user has ever
+        # exported anything.
+        default_dir = str(Path(__file__).resolve().parent)
+        filters = self.tr(
+            "CSV (*.csv);;Excel (*.xlsx);;Database SQL (*.db);;Testo semplice (*.txt)"
+        )
+        path_str, _ = QFileDialog.getSaveFileName(
+            self, self.tr("Esporta dati come..."), default_dir, filters
+        )
+        if not path_str:
+            return
+
+        path = Path(path_str)
+        fmt = FORMAT_BY_EXTENSION.get(path.suffix.lower())
+        if fmt is None:
+            # No/unrecognized extension typed by hand -- default to CSV
+            # (the least surprising choice) and make it explicit in the
+            # filename rather than silently guessing.
+            fmt = "csv"
+            path = path.with_suffix(EXTENSION_BY_FORMAT["csv"])
+
+        try:
+            export_dataframe(df, path, fmt)
+        except ExportError as exc:
+            QMessageBox.critical(
+                self, self.tr("Esportazione non riuscita"), str(exc)
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            self.tr("Esportazione completata"),
+            self.tr("Dati esportati in:\n{path}").format(path=str(path)),
+        )
 
     def _build_central_layout(self) -> None:
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -279,25 +331,41 @@ class MainWindow(QMainWindow):
     def _build_edit_menu(self, menu_bar) -> None:
         menu = menu_bar.addMenu(self.tr("&Modifica"))
 
-        def _add(label: str, shortcut, slot_name: str) -> QAction:
+        # Cut/Copy/Paste/Select all/Select none act directly on the data
+        # table's current selection (panels/table_panel.py) -- tab-
+        # separated clipboard text, matching Excel/LibreOffice/Sheets, and
+        # every pasted cell goes through the same edit_callback as a
+        # hand-typed edit, so it's indistinguishable to the filter
+        # pipeline's undo/redo.
+        def _add(label: str, shortcut, slot) -> QAction:
             action = QAction(label, self)
             if shortcut is not None:
                 action.setShortcut(shortcut)
-            action.triggered.connect(lambda: self._not_yet_implemented(slot_name))
+            action.triggered.connect(slot)
             menu.addAction(action)
             return action
 
-        self.action_cut = _add(self.tr("Taglia"), QKeySequence.StandardKey.Cut, "cut")
-        self.action_copy = _add(self.tr("Copia"), QKeySequence.StandardKey.Copy, "copy")
+        self.action_cut = _add(
+            self.tr("Taglia"), QKeySequence.StandardKey.Cut, self.table_panel.cut_selection
+        )
+        self.action_copy = _add(
+            self.tr("Copia"), QKeySequence.StandardKey.Copy, self.table_panel.copy_selection
+        )
         self.action_paste = _add(
-            self.tr("Incolla"), QKeySequence.StandardKey.Paste, "paste"
+            self.tr("Incolla"),
+            QKeySequence.StandardKey.Paste,
+            self.table_panel.paste_at_selection,
         )
         menu.addSeparator()
         self.action_select_all = _add(
-            self.tr("Seleziona tutto"), QKeySequence.StandardKey.SelectAll, "select_all"
+            self.tr("Seleziona tutto"),
+            QKeySequence.StandardKey.SelectAll,
+            self.table_panel.select_all,
         )
         self.action_select_none = _add(
-            self.tr("Seleziona niente"), QKeySequence("Ctrl+Shift+A"), "select_none"
+            self.tr("Seleziona niente"),
+            QKeySequence("Ctrl+Shift+A"),
+            self.table_panel.select_none,
         )
         menu.addSeparator()
         # Rides on the filter-pipeline history (core/filter_pipeline.py),
@@ -358,8 +426,11 @@ class MainWindow(QMainWindow):
         )
         menu.addSeparator()
 
-        # Secondary PDF preview pane close/reopen, mirrored from the "✕"
-        # button on the pane itself (Phase 3).
+        # Secondary PDF preview pane: off by default, and the *only* way it
+        # ever becomes eligible for the FIFO preview logic is this checkbox
+        # (or the pane's own "✕", which just unchecks it) -- see
+        # PreviewPanel.set_secondary_enabled()'s docstring for why this is
+        # routed through PreviewPanel rather than the slot widget directly.
         self.action_view_secondary_preview = QAction(
             self.tr("Seconda anteprima PDF"), self
         )
@@ -368,10 +439,10 @@ class MainWindow(QMainWindow):
             VIEW_SECONDARY_PREVIEW_KEY, False
         )
         self.action_view_secondary_preview.toggled.connect(
-            self.preview_panel.secondary_slot.setVisible
+            self.preview_panel.set_secondary_enabled
         )
         self.action_view_secondary_preview.setChecked(secondary_initial)
-        self.preview_panel.secondary_slot.setVisible(secondary_initial)
+        self.preview_panel.set_secondary_enabled(secondary_initial)
         menu.addAction(self.action_view_secondary_preview)
 
     def _build_options_menu(self, menu_bar) -> None:

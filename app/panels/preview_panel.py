@@ -8,17 +8,30 @@ continuous multi-page scrolling come for free.
 There is deliberately no "open PDF" button here: a preview is only ever
 populated by single-clicking a file over in the folder browser panel
 (single click -> preview, double click -> field editor overlay, per spec).
-See open_pdf() below for the exact FIFO rule:
 
-  - 1st click ever (both slots empty)      -> fills the primary (left) slot
-  - 2nd click (primary filled, 2nd empty)  -> fills the secondary (right) slot
-  - further clicks (both slots filled)     -> replaces whichever slot was
+The secondary slot is opt-in, off by default: it only ever gets used once
+the user has explicitly turned it on from the View menu's "Seconda
+anteprima PDF" checkbox (main_window.py calls set_secondary_enabled()
+whenever that checkbox is toggled). Until then there is effectively only
+one usable slot -- every click just replaces whatever the primary slot is
+showing. See open_pdf() below for the exact rule:
+
+  - secondary disabled                     -> every click replaces the
+                                               primary slot's content
+  - secondary enabled, 1st click (both
+    slots empty)                           -> fills the primary (left) slot
+  - secondary enabled, 2nd click (primary
+    filled, 2nd empty)                     -> fills the secondary (right) slot
+  - secondary enabled, further clicks
+    (both slots filled)                    -> replaces whichever slot was
                                                filled longest ago
   - clicking a file already shown in a slot just brings that slot to the
     front of the recency order, instead of reloading it into the other one
 
-The secondary slot's own "✕" clears + hides it (wired to the View menu's
-"Seconda anteprima PDF" toggle in main_window.py, so both stay in sync).
+The secondary slot's own "✕" also unchecks the View menu's "Seconda
+anteprima PDF" action (main_window.py), which in turn calls
+set_secondary_enabled(False) here -- same single code path either way, so
+the slot's visibility and its FIFO eligibility can never drift apart.
 There is no way to close the primary slot, by design, per spec.
 """
 
@@ -149,15 +162,23 @@ class PreviewPanel(QWidget):
         layout.addLayout(slots_row, stretch=1)
 
         # Recency order of *filled* slots, oldest first -- drives the FIFO
-        # replacement rule. main_window.py connects the secondary "✕" to
-        # close_secondary() and keeps the View-menu checkbox in sync.
+        # replacement rule. Only relevant once the secondary slot is
+        # enabled; see set_secondary_enabled().
         self._fill_order: list[str] = []
+        self._secondary_enabled = False
 
     # ---------------------------------------------------------------- API --
     def open_pdf(self, file_path: str) -> None:
         if self.primary_slot.current_path() == file_path:
             self._touch("primary")
             return
+
+        if not self._secondary_enabled:
+            # Only one usable slot while the secondary preview is off --
+            # every new document replaces the primary's content, full stop.
+            self._load_into("primary", file_path)
+            return
+
         if self.secondary_slot.current_path() == file_path:
             self._touch("secondary")
             return
@@ -166,15 +187,25 @@ class PreviewPanel(QWidget):
             self._load_into("primary", file_path)
         elif self.secondary_slot.current_path() is None:
             self._load_into("secondary", file_path)
-            self.secondary_slot.setVisible(True)
         else:
             oldest_slot = self._fill_order[0]
             self._load_into(oldest_slot, file_path)
 
+    def set_secondary_enabled(self, enabled: bool) -> None:
+        """The single entry point for turning the secondary slot on/off --
+        wired to the View menu's "Seconda anteprima PDF" checkbox and to
+        the slot's own "✕" (via that same checkbox) in main_window.py.
+        Disabling always clears the slot's content too, so re-enabling it
+        later never resurrects a stale PDF, and open_pdf() never has to
+        guess whether a "filled but hidden" slot is actually eligible."""
+        self._secondary_enabled = enabled
+        self.secondary_slot.setVisible(enabled)
+        if not enabled:
+            self.close_secondary()
+
     def close_secondary(self) -> None:
-        """Clears the secondary slot's content. Visibility is intentionally
-        left to the caller (main_window.py keeps it in sync with the View
-        menu's checkable action)."""
+        """Clears the secondary slot's content only -- visibility is
+        controlled exclusively by set_secondary_enabled()."""
         self.secondary_slot.clear()
         if "secondary" in self._fill_order:
             self._fill_order.remove("secondary")
@@ -182,8 +213,7 @@ class PreviewPanel(QWidget):
     def reset(self) -> None:
         """Full reset, e.g. when the folder is closed."""
         self.primary_slot.clear()
-        self.close_secondary()
-        self.secondary_slot.setVisible(False)
+        self.set_secondary_enabled(False)
         self._fill_order = []
 
     # ------------------------------------------------------------- Internal --

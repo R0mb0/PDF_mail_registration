@@ -3,8 +3,9 @@ PySide6>=6.6
 
 # Data handling
 pandas>=2.0
-duckdb>=0.10        # SQL filter engine (queries pandas DataFrames directly)
 openpyxl>=3.1        # .xlsx export
+# SQL filter mode and SQL export both use Python's built-in sqlite3 module --
+# no duckdb/SQLAlchemy dependency, one less thing that can fail to install.
 
 # PDF handling
 pypdf>=4.0           # AcroForm field extraction (matches LaTeX_Template field names)

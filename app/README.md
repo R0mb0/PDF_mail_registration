@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Current status (Phase 0 + 1 + 2 + 3 + 4 + 5 + 6)
+## Current status (Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 -- feature-complete)
 
 - Application shell: menu bar (File / Edit / View / Options), dockable and
   resizable panels laid out as specified (file browser top-left, PDF
@@ -29,10 +29,11 @@ python main.py
 - Light/dark theme: follows the OS by default, can be forced from
   Options > Theme.
 - Language: follows the OS locale by default (falls back to Italian),
-  can be forced from Options > Language. Currently wired for Italian and
-  English; the other 4 languages (French, German, Spanish, Portuguese)
-  will get real translation files in the polish phase -- for now they fall
-  back to Italian source strings.
+  can be forced from Options > Language. All 6 languages (Italian, English,
+  French, German, Spanish, Portuguese) have full translations authored --
+  see `translations/README.md` for the one remaining manual step (compiling
+  the `.ts` source files to `.qm`, which needs the `pyside6-lrelease` tool
+  that ships with PySide6 but can't be run from this sandbox).
 - Text/UI scale: 90/100/110/125/150% presets under Options > Dimensione
   testo, independent from OS display scaling -- accessibility feature so
   each user can adjust to their own screen/eyesight. Every panel reads
@@ -50,10 +51,8 @@ python main.py
   (empty table, empty browser).
 - File browser: Explorer-style view of the *.pdf files in the opened
   folder only (non-recursive), with large/medium/small icons, list and
-  details view modes, plus a live search box. Single/double click already
-  emit signals (`file_single_clicked` / `file_double_clicked`) that Phase 3
-  (preview) and Phase 6 (field editor) will connect to -- not wired to
-  anything yet in this phase.
+  details view modes, plus a live search box. Single click opens the
+  preview, double click opens the field editor (see below).
 - PDF extraction (`core/pdf_extraction.py`, no Qt dependency, unit-tested
   headlessly): reads every AcroForm field found in every PDF in the folder
   -- the column set is not hardcoded to LaTeX_Template's schema, since the
@@ -70,13 +69,18 @@ python main.py
 - Closing the folder discards the table entirely, matching the spec's
   "torna allo stato iniziale."
 - PDF preview: single-clicking a file in the browser opens it in the
-  preview (primary slot first, then secondary, then FIFO-replaces
-  whichever slot was filled longest ago), rendered via PySide6's own
-  QtPdf/QtPdfWidgets (QPdfDocument + QPdfView) -- scrolling and continuous
-  multi-page layout come from that widget for free, plus simple +/- zoom
-  buttons. The secondary pane's "✕" and the View menu's "Seconda
-  anteprima PDF" checkbox are kept in sync with each other. Double-click
-  (-> field editor) is not wired yet -- Phase 6.
+  preview, rendered via PySide6's own QtPdf/QtPdfWidgets (QPdfDocument +
+  QPdfView) -- scrolling and continuous multi-page layout come from that
+  widget for free, plus simple +/- zoom buttons. The secondary pane is
+  off by default and stays that way until explicitly turned on from
+  View > "Seconda anteprima PDF" (or the pane's own "✕", which just
+  unchecks that same action) -- while it's off there is only ever one
+  usable slot, and every click replaces its content outright; only once
+  it's on does opening a file fill the primary slot first, then the
+  secondary, then FIFO-replace whichever slot was filled longest ago.
+  `PreviewPanel.set_secondary_enabled()` is the single place this is
+  decided, so the pane's visibility and its FIFO eligibility can never
+  drift apart.
 - Excel/SQL filter-mode buttons are mutually exclusive (QButtonGroup) and
   neither is selected by default; the active one gets a solid accent-color
   fill so it's unambiguous which mode is in effect.
@@ -146,6 +150,39 @@ python main.py
   opening the folder does, per the "changing a PDF invalidates the whole
   downstream table state" rule -- there is no attempt to patch just the
   edited row in place.
+- Export (`core/data_export.py`, no Qt dependency, unit-tested headlessly
+  round-tripping every format through its own reader): "Esporta dati
+  come..." opens a native save dialog defaulting to the app's own folder,
+  offering CSV / Excel / SQL database (a standalone `.db` file, table
+  `data`) / plain tab-separated text; the format is picked from whichever
+  extension ends up in the chosen filename, defaulting to CSV if that's
+  ambiguous. Exports exactly what the table currently shows -- i.e. after
+  whatever filters/manual edits are active, not the raw extraction. A
+  re-export to an existing `.db` path replaces it outright rather than
+  appending a second copy of the table.
+- Edit menu: Cut/Copy/Paste operate on the table's current cell selection
+  using tab-separated clipboard text, the same layout Excel/LibreOffice/
+  Sheets themselves use, so copying out of/pasting into an external
+  spreadsheet just works (`core/clipboard_format.py`, no Qt dependency,
+  unit-tested headlessly). Paste writes every cell through the same
+  edit_callback as typing directly into a cell, so it participates
+  identically in the filter pipeline's undo/redo and in the "File" column's
+  read-only protection. Select all/Select none act on the table selection
+  directly.
+- Cleaned up a leftover inconsistency from Phase 4: `requirements.txt`
+  still listed `duckdb` even though the SQL filter mode was switched to
+  the standard-library `sqlite3` back then -- removed.
+- Full Italian source strings plus hand-authored English/French/German/
+  Spanish/Portuguese translations for all 78 translatable UI strings
+  (`translations/registration_app_<lang>.ts`) -- see
+  `translations/README.md` for why these ship as `.ts` rather than
+  already-compiled `.qm` files.
+- Resizable panels: every internal border was already a `QSplitter` handle
+  since Phase 1 (drag any border between file browser/preview/formula
+  bar/table to resize); nothing further was needed here, just confirmed
+  still correct.
+- "Apri nuova istanza" (a fresh, independent process with no folder
+  pre-opened) was already implemented in Phase 1.
 
 ## Project layout
 
@@ -166,6 +203,8 @@ app/
     excel_formula.py        sandboxed Excel-subset expression evaluator (Qt-free, unit-tested headlessly)
     sql_filter.py           SQL-mode filter via in-memory sqlite3 (Qt-free, unit-tested headlessly)
     pdf_field_io.py         detailed AcroForm read/write for the field editor (Qt-free, unit-tested headlessly)
+    data_export.py          CSV/Excel/SQL/plain-text export (Qt-free, unit-tested headlessly)
+    clipboard_format.py     tab-separated formatting for Edit menu Cut/Copy/Paste (Qt-free, unit-tested headlessly)
   dialogs/
     progress_dialog.py      modal, non-closable "analyzing..." popup with real progress
     field_editor_dialog.py  in-app PDF field editor opened by double-clicking a file
@@ -174,5 +213,7 @@ app/
     preview_panel.py        right panel (PDF preview, up to 2 panes)
     formula_bar_panel.py    filter/formula bar + filter chip stack
     flow_layout.py          Qt's standard wrapping "flow" layout, used by the chip stack
-    table_panel.py          data table (DataFrameTableModel-backed) + export button
+    table_panel.py          data table (DataFrameTableModel-backed) + export button + Cut/Copy/Paste/Select
+  translations/
+    registration_app_{en,fr,de,es,pt}.ts   translation sources (see translations/README.md to compile to .qm)
 ```
