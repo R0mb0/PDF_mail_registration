@@ -61,7 +61,11 @@ python main.py
   Runs on a background QThread (`core/extraction_worker.py`) while a
   modal, non-closable progress popup (`dialogs/progress_dialog.py`) shows
   real per-file progress; a corrupt/unreadable PDF is reported in a
-  warning dialog afterward rather than aborting the whole scan.
+  warning dialog afterward rather than aborting the whole scan. A checkbox
+  shows its real state as text -- "Yes", "Off", or whatever the PDF's own
+  on-state is named -- rather than collapsing "unchecked" to a blank
+  cell; that used to make an unchecked checkbox indistinguishable from a
+  text field nobody filled in (bug found via real test data, fixed).
 - Data table: bound to the extraction result via a DataFrame-backed Qt
   model (`core/dataframe_table_model.py`) -- bold column headers,
   automatic 1-based row numbers (not part of the data), and every data
@@ -114,20 +118,37 @@ python main.py
     error message and leaves the pipeline completely unchanged.
 - Document classification (`core/classification.py`, no Qt dependency,
   unit-tested headlessly): every extracted PDF is green/orange/red
-  relative to the folder's own "typical" field structure (majority
-  filled-vs-blank per field), not a hardcoded schema --
+  relative to the folder's own "typical" field structure -- majority
+  filled-vs-blank for free-text fields, majority *exact value* for
+  low-cardinality (checkbox-like) fields -- not a hardcoded schema --
   - **red**: unreadable PDF, or field structure deviating from the
     typical one by more than 30% -- excluded from the table entirely.
-  - **orange**: a near-duplicate (>30% of its filled fields identical to
-    another document's), or any blank field, or a structural deviation up
-    to 30% -- included, blanks stay blank.
+  - **orange**: a near-duplicate (>30% of its filled, identifying fields
+    identical to another document's), or a structural deviation up to
+    30% -- included, blanks stay blank.
   - **green**: none of the above.
+  - Two real bugs were found and fixed here after testing against an
+    actual filled-out batch of PDFs (`Prova_pdfs/`), not just synthetic
+    data: (1) any blank field used to force orange unconditionally, even
+    when being blank was the norm for the whole folder (e.g. an optional
+    consent checkbox nearly everyone leaves unchecked) -- removed, a
+    blank/off field is only a signal when it *deviates* from the folder's
+    own norm, which the deviation score already captures; (2) once
+    checkboxes stopped reporting "unchecked" as blank (see the PDF
+    extraction fix above), duplicate detection started treating a shared
+    checkbox answer as evidence two documents were the same registration
+    -- fixed by excluding low-cardinality fields (at most 2 distinct
+    values folder-wide) from duplicate matching entirely; only higher-
+    cardinality, actually identifying fields (name, email, ...) count
+    toward a duplicate match now.
   - Known characteristic, not a bug: with very few documents (single
-    digits) a field sitting near a 50/50 filled/blank split across the
-    whole folder makes the majority baseline unstable, which can tip a
-    document into red a bit more eagerly than with a larger, more typical
-    sample -- verified this behaves as expected at a realistic scale (10
-    documents, one isolated blank field correctly lands orange, not red).
+    digits) a field sitting near a 50/50 split across the whole folder
+    makes the majority baseline unstable, which can tip a document into
+    red a bit more eagerly than with a larger, more typical sample --
+    verified this behaves as expected at a realistic scale (10+
+    documents, one isolated deviating field correctly lands orange, not
+    red -- confirmed both on synthetic data and on the real `Prova_pdfs/`
+    batch).
   - The colored strip under the file browser shows one tall button per
     PDF (including red ones), numbered, with the reasons in its tooltip;
     clicking one opens it in preview and selects/highlights it in the

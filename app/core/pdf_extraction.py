@@ -42,8 +42,16 @@ def _read_pdf_fields(pdf_path: Path) -> dict[str, str]:
     """Read one PDF's AcroForm field values as a flat {name: value} dict.
 
     Checkbox/radio values come back from pypdf as PDF name objects (e.g.
-    "/Yes", "/Off"); normalized here to "Yes"/"" so the raw table is
-    directly readable without the caller needing to know PDF internals.
+    "/Yes", "/Off"); stripped of the leading "/" here so the raw table is
+    directly readable without the caller needing to know PDF internals --
+    but otherwise left exactly as the PDF itself states, including "Off"
+    for an unchecked box. This used to be collapsed to an empty string,
+    which made an unchecked checkbox indistinguishable in the table from a
+    text field that was genuinely never filled in -- both showed as a
+    blank cell. That ambiguity was a real bug, not just cosmetic: it also
+    fed into core/classification.py, where a checkbox left at its normal,
+    typical "Off" state across the whole folder was wrongly counted as a
+    "field not filled in" on every single document.
     """
     reader = PdfReader(str(pdf_path))
     fields = reader.get_fields() or {}
@@ -53,8 +61,6 @@ def _read_pdf_fields(pdf_path: Path) -> dict[str, str]:
         value = field_obj.get("/V", "")
         if isinstance(value, str) and value.startswith("/"):
             value = value[1:]
-            if value == "Off":
-                value = ""
         row[str(name)] = "" if value is None else str(value)
     return row
 
