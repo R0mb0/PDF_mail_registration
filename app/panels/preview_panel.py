@@ -77,7 +77,7 @@ from scaling import px
 _MIN_ZOOM = 0.2
 _MAX_ZOOM = 4.0
 _ZOOM_STEP = 0.15
-# Page geometry from QPdfDocument.pageSize() comes back in points (1/72
+# Page geometry from QPdfDocument.pagePointSize() comes back in points (1/72
 # inch); rendering straight at that many pixels would look blurry on any
 # reasonably dense screen, so this is the base pixels-per-point multiplier
 # at 100% zoom -- 2.0 gives a comfortably sharp starting resolution.
@@ -246,7 +246,7 @@ class _PreviewSlot(QWidget):
             return
         page_index = max(0, min(page_count - 1, self._current_page))
 
-        point_size = self._document.pageSize(page_index)  # QSizeF, in points
+        point_size = self._document.pagePointSize(page_index)  # QSizeF, in points
         target_size = QSize(
             max(1, round(point_size.width() * _BASE_RENDER_SCALE * self._zoom_factor)),
             max(1, round(point_size.height() * _BASE_RENDER_SCALE * self._zoom_factor)),
