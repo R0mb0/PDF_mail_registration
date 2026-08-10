@@ -1,0 +1,3 @@
+# Only needed to produce a standalone Windows .exe (build_windows.bat).
+# Not required to just run `python main.py` -- see requirements.txt for that.
+pyinstaller>=6.6

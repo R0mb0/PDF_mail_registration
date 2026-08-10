@@ -20,6 +20,38 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Building a standalone Windows executable
+
+`build_windows.bat` wraps [PyInstaller](https://pyinstaller.org) to produce a
+single `RegistrationManager.exe` that runs on any Windows PC with no Python
+install required:
+
+```bat
+cd app
+.venv\Scripts\activate
+build_windows.bat
+```
+
+Output: `dist\RegistrationManager.exe`. That one file is the whole
+deliverable -- copy it anywhere and double-click it.
+
+Notes:
+- Must run inside the same virtual environment `requirements.txt` was
+  installed into -- PyInstaller bundles whatever that environment actually
+  has installed, so a bare system Python won't have PySide6/pandas/pypdf
+  to bundle in the first place.
+- `--onefile` trades a bit of startup time (it self-extracts to a temp
+  folder on every launch) for the single-file convenience that was asked
+  for; if startup speed matters more than a single file, drop `--onefile`
+  from `build_windows.bat` for a `dist\RegistrationManager\` folder instead
+  (still no Python required, just several files instead of one).
+- `--windowed` suppresses the console window, correct for a GUI app; if the
+  built .exe fails silently, temporarily remove `--windowed` from the
+  script and rebuild to see the actual Python traceback in a console.
+- This hasn't been run/tested here (no Windows machine or PySide6 available
+  in this sandbox) -- same as every GUI-facing change in this project, it
+  needs a real local run to confirm.
+
 ## Current status (Phase 0 + 1 + 2 + 3 + 4 + 5 + 6 + 7 -- feature-complete)
 
 - Application shell: menu bar (File / Edit / View / Options), dockable and
