@@ -106,8 +106,24 @@ def write_fields(pdf_path: Path, fields: list[FieldInfo]) -> None:
             pdf_values[info.name] = info.value
         # "other" (e.g. signature) fields are never written back.
 
+    # auto_regenerate=False is deliberate and load-bearing, not just a
+    # style choice: it tells pypdf to bake a real, immediately-visible
+    # appearance stream into each field's /AP right now, and to clear the
+    # PDF's /NeedAppearances flag (which the original LaTeX_Template
+    # already ships as true, since hyperref sets it by default). If that
+    # flag is left/set true instead, the file's *data* is still correct --
+    # the app's own table reads /V directly and was never affected -- but
+    # any viewer that takes the flag at face value and doesn't actually
+    # regenerate appearances itself (this app's own PDF preview included,
+    # since it's a lightweight embedded renderer, not a full interactive
+    # form engine -- and pypdf's own docs note several common viewers
+    # behave this way) renders the field as blank, even though the value
+    # is genuinely saved. This was a real bug: an earlier version of this
+    # function forced auto_regenerate=False and then immediately re-set
+    # the flag anyway via set_need_appearances_writer(True) right after,
+    # which undid the whole point and left every field invisible in this
+    # app's own preview pane despite being saved correctly.
     writer.update_page_form_field_values(None, pdf_values, auto_regenerate=False)
-    writer.set_need_appearances_writer(True)
 
     tmp_path = pdf_path.with_name(pdf_path.name + ".tmp")
     try:

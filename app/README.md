@@ -171,6 +171,25 @@ python main.py
   opening the folder does, per the "changing a PDF invalidates the whole
   downstream table state" rule -- there is no attempt to patch just the
   edited row in place.
+  - Bug found and fixed (via real testing, not synthetic data): saved
+    fields were correctly stored (the data table always showed the right
+    values, since it reads `/V` directly) but showed up blank in this
+    app's own PDF preview pane after editing. Root cause was in how the
+    file was saved, not how it was read: pypdf was told to bake a real,
+    immediately-visible appearance for each field (`auto_regenerate=
+    False`) and then, on the very next line, told to throw that away and
+    ask the *viewer* to regenerate it instead (`set_need_appearances_
+    writer(True)`) -- and this app's own PDF preview, like several other
+    lightweight PDF renderers (this is a known, documented hyperref/PDF-
+    viewer interaction, not unique to this app), doesn't actually
+    regenerate appearances itself, so it rendered nothing. Removing that
+    second line was the fix -- verified the saved PDF now has
+    `/NeedAppearances: False` and a real `/AP` appearance stream on every
+    filled field. Separately, and *not yet changed*: `LaTeX_Template`'s
+    own compiled PDF ships with `/NeedAppearances: true` from the moment
+    pdflatex/hyperref generates it, before this app ever touches it --
+    worth hardening at the template level too if a PDF ends up filled by
+    some tool other than this app's own editor.
 - Export (`core/data_export.py`, no Qt dependency, unit-tested headlessly
   round-tripping every format through its own reader): "Esporta dati
   come..." opens a native save dialog defaulting to the app's own folder,

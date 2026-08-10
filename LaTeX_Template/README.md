@@ -25,12 +25,26 @@ built with LaTeX + `hyperref` AcroForm fields. It is designed to be:
 
 ```bash
 pdflatex registration_form.tex
-pdflatex registration_form.tex   # run twice so hyperref settles references
+pdflatex registration_form.tex           # run twice so hyperref settles references
+python3 fix_pdf_appearances.py registration_form.pdf
 ```
 
 Requires a standard TeX Live install with `hyperref`, `tikz`, `tcolorbox`
 (skins + breakable libraries), `eso-pic`, `enumitem`, `ragged2e`, and the
-`tex-gyre` fonts (`tgheros`) -- all part of a full TeX Live distribution.
+`tex-gyre` fonts (`tgheros`) -- all part of a full TeX Live distribution --
+plus `pypdf` (already a dependency of `app/`) for the last step.
+
+The last step matters, it's not just cleanup: hyperref sets the PDF's
+`/NeedAppearances` flag to true by default on any form it creates, which
+tells some (not all) PDF readers to regenerate a field's on-screen
+appearance themselves instead of trusting what's already there -- readers
+that don't actually do that regeneration (several lightweight ones don't;
+this includes the `app/` desktop application's own PDF preview before it
+was fixed) can render an otherwise-correctly-filled field as blank.
+`fix_pdf_appearances.py` clears that flag right after compiling, before
+the template is ever sent out or filled in by anyone. Verified to be a
+purely cosmetic-metadata change -- field names/values and the rendered
+page image are identical before and after running it.
 
 ## Editing the form
 
