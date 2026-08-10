@@ -90,6 +90,36 @@ python main.py
     apply to a manually rendered single image per page -- acceptable
     here since this project's own form is one page, and multi-page PDFs
     still show every page, just one at a time via the nav buttons.
+  - Second, deeper bug found and fixed (also via real testing): even
+    after switching to `QPdfDocument.render()`, filled-in fields were
+    *still* invisible in the preview, while the data table stayed
+    correct throughout -- proving the values themselves were fine and
+    the problem was purely in rendering. Two independent causes, both
+    confirmed by rendering to an image with every PDF annotation
+    stripped out entirely and checking what still appears:
+    1. `QPdfDocument.render()`'s own `Annotations` render flag turned
+       out not to be enough in practice -- Qt's PDF module doesn't
+       reliably draw AcroForm field/widget content even with it set, a
+       real limitation of the module itself, not a wrong option.
+    2. Independently, `hyperref` (the LaTeX package used to build the
+       form) has its own confirmed upstream bug
+       (github.com/latex3/hyperref/issues/94, open since 2019): a
+       checkbox's "checked" appearance is written into the PDF as an
+       empty object with no actual drawing content -- so no renderer
+       anywhere could show a checkmark for it, independent of #1.
+    - Fixed by rendering the preview from a temporary, flattened copy
+      of the PDF instead of the live file (`core/pdf_field_io.py`'s
+      `build_flattened_preview_copy()`): every field's current value is
+      baked directly into the page's own content, which every renderer
+      already draws correctly regardless of annotation support. Before
+      flattening, `repair_checkbox_appearances()` replaces any empty
+      checkbox appearance with a real, minimal checkmark drawn in the
+      template's own accent color -- this same repair also runs inside
+      `write_fields()` (self-heals any file this app's own editor
+      touches) and inside `LaTeX_Template/fix_pdf_appearances.py` (fixes
+      it at the source, for every copy of the template from now on).
+      The original file on disk is never touched by any of this -- only
+      a throwaway temp copy used purely for display.
   - The secondary pane is off by default and stays that way until
     explicitly turned on from View > "Seconda anteprima PDF" (or the
     pane's own "✕", which just unchecks that same action) -- while it's
@@ -199,11 +229,13 @@ python main.py
     regenerate appearances itself, so it rendered nothing. Removing that
     second line was the fix -- verified the saved PDF now has
     `/NeedAppearances: False` and a real `/AP` appearance stream on every
-    filled field. Separately, and *not yet changed*: `LaTeX_Template`'s
-    own compiled PDF ships with `/NeedAppearances: true` from the moment
-    pdflatex/hyperref generates it, before this app ever touches it --
-    worth hardening at the template level too if a PDF ends up filled by
-    some tool other than this app's own editor.
+    filled field. Separately, `LaTeX_Template`'s own compiled PDF used to
+    ship with `/NeedAppearances: true` from the moment pdflatex/hyperref
+    generates it, before this app ever touches it -- now also fixed at
+    the source by `LaTeX_Template/fix_pdf_appearances.py`, run once right
+    after compiling (see that folder's README), so every fresh copy of
+    the template is already correct even before this app's editor ever
+    saves it.
 - Export (`core/data_export.py`, no Qt dependency, unit-tested headlessly
   round-tripping every format through its own reader): "Esporta dati
   come..." opens a native save dialog defaulting to the app's own folder,

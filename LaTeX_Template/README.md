@@ -34,17 +34,31 @@ Requires a standard TeX Live install with `hyperref`, `tikz`, `tcolorbox`
 `tex-gyre` fonts (`tgheros`) -- all part of a full TeX Live distribution --
 plus `pypdf` (already a dependency of `app/`) for the last step.
 
-The last step matters, it's not just cleanup: hyperref sets the PDF's
-`/NeedAppearances` flag to true by default on any form it creates, which
-tells some (not all) PDF readers to regenerate a field's on-screen
-appearance themselves instead of trusting what's already there -- readers
-that don't actually do that regeneration (several lightweight ones don't;
-this includes the `app/` desktop application's own PDF preview before it
-was fixed) can render an otherwise-correctly-filled field as blank.
-`fix_pdf_appearances.py` clears that flag right after compiling, before
-the template is ever sent out or filled in by anyone. Verified to be a
-purely cosmetic-metadata change -- field names/values and the rendered
-page image are identical before and after running it.
+The last step matters, it's not just cleanup -- it fixes two independent
+problems, neither of which `hyperref` gets right on its own:
+
+1. `hyperref` sets the PDF's `/NeedAppearances` flag to true by default
+   on any form it creates, which tells some (not all) PDF readers to
+   regenerate a field's on-screen appearance themselves instead of
+   trusting what's already there -- readers that don't actually do that
+   regeneration (several lightweight ones don't; this includes the
+   `app/` desktop application's own PDF preview before it was fixed) can
+   render an otherwise-correctly-filled field as blank.
+2. `hyperref` has a real, independently-documented bug of its own
+   (github.com/latex3/hyperref/issues/94, open since 2019): a
+   `\CheckBox`'s "checked" appearance is written into the PDF as a
+   syntactically *empty* object instead of a real content stream. With
+   no actual drawing content, *no* renderer can show a checkmark for it
+   -- this isn't a "some readers are lenient" problem like #1, it's
+   broken everywhere, Adobe included in some render paths.
+
+`fix_pdf_appearances.py` clears the `/NeedAppearances` flag and replaces
+any empty checkbox appearance with a real, minimal checkmark drawn in
+the template's own accent color, right after compiling, before the
+template is ever sent out or filled in by anyone. Both fixes were
+verified by rendering the page to an image with every PDF annotation
+stripped out entirely, forcing the render to rely purely on the page's
+own baked-in content, before and after running the script.
 
 ## Editing the form
 

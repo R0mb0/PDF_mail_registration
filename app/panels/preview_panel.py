@@ -5,18 +5,35 @@ extra dependency).
 
 Each pane renders the current page itself, via QPdfDocument.render(page,
 size, options) -> QImage, shown in a QLabel inside a QScrollArea, instead
-of using QPdfWidgets.QPdfView. This is a deliberate change, not the
-original design: QPdfView is a known, widely-reported limitation --
-confirmed via Qt's own forums and multiple independent bug reports -- it
-does not draw annotations (which is what AcroForm field values actually
-are, visually) at all, with no public option to turn that on. A field
-saved by this app's own editor (core/pdf_field_io.py) or filled by hand in
-a fully-featured reader like Adobe Acrobat is stored correctly either way
--- this app's data table, which reads the raw field value directly, was
-never affected -- but QPdfView would silently render the page as if the
-form were still blank. QPdfDocument.render() does not have that
-limitation: QPdfDocumentRenderOptions has a documented Annotations render
-flag that makes it draw field values same as any other page content.
+of using QPdfWidgets.QPdfView (a known, widely-reported Qt limitation:
+QPdfView never draws annotations -- which is what AcroForm field values
+actually are, visually -- with no public option to turn that on).
+
+QPdfDocument.render() accepts a documented Annotations render flag that's
+*supposed* to draw field values same as any other page content -- but in
+practice this still wasn't enough on its own (confirmed via real device
+testing): Qt's PDF module, like several other PDFium-based renderers,
+does not reliably draw *Widget*-subtype annotations (i.e. actual form
+fields) even with that flag set, as distinct from simpler annotation
+types. Rather than depend further on a Qt/PDFium behavior this app has no
+control over, `load()` below renders from a temporary, throwaway
+*flattened* copy of the PDF instead (core.pdf_field_io.
+build_flattened_preview_copy() -- see its docstring), which bakes every
+field's current value directly into the page's own content stream. Once
+a value is just ordinary page content, no annotation support is needed
+at all to see it -- the original file on disk is never touched, only
+this disposable render-only copy is.
+
+Flattening also surfaced a second, independent bug, upstream in hyperref
+itself (not this app, not Qt): LaTeX_Template's checkboxes have their
+"checked" appearance written as a syntactically empty PDF object
+(https://github.com/latex3/hyperref/issues/94, open since 2019) -- with
+no real content, *no* renderer could ever draw a checkmark, no matter how
+correctly everything else was saved or rendered. Both write_fields() and
+build_flattened_preview_copy() call core.pdf_field_io.
+repair_checkbox_appearances() to patch this with a real checkmark
+drawing, the moment either of them touches a PDF -- see that function's
+docstring for the full story.
 
 The trade-off: QPdfView's continuous multi-page scrolling ("comes for
 free" from being a QAbstractScrollArea) doesn't apply to a manually
@@ -72,6 +89,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.pdf_field_io import build_flattened_preview_copy
 from scaling import px
 
 _MIN_ZOOM = 0.2
@@ -95,7 +113,8 @@ class _PreviewSlot(QWidget):
         super().__init__(parent)
         self._document = QPdfDocument(self)
         self._document.statusChanged.connect(self._on_status_changed)
-        self._current_path: str | None = None
+        self._current_path: str | None = None  # the real file -- drives FIFO identity
+        self._temp_preview_path: Path | None = None  # the flattened copy actually loaded
         self._current_page = 0
         self._zoom_factor = 1.0
 
@@ -180,7 +199,31 @@ class _PreviewSlot(QWidget):
         self._current_page = 0
         self._zoom_factor = 1.0
         self._name_label.setText(Path(file_path).name)
-        self._document.load(file_path)
+
+        # Render from a flattened, throwaway copy, not the file itself --
+        # see module docstring for why. Falls back to the real file
+        # directly if flattening fails for any reason (e.g. a PDF with no
+        # AcroForm at all), so the preview still shows *something* rather
+        # than nothing. The *previous* temp file is only deleted after
+        # QPdfDocument has switched over to the new one, not before --
+        # deleting it first would risk a PermissionError on Windows,
+        # where an open file can't be removed while something still has
+        # it open.
+        previous_temp_path = self._temp_preview_path
+        self._temp_preview_path = None
+        try:
+            temp_path = build_flattened_preview_copy(Path(file_path))
+            self._temp_preview_path = temp_path
+            self._document.load(str(temp_path))
+        except Exception:
+            self._document.load(file_path)
+
+        if previous_temp_path is not None:
+            try:
+                previous_temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass  # still in use or already gone -- harmless, it's in the OS temp dir
+
         # Local files typically finish loading synchronously, but fall
         # back on statusChanged (below) for anything that doesn't --
         # either way this call is a harmless no-op if the document isn't
@@ -193,6 +236,7 @@ class _PreviewSlot(QWidget):
         self._current_path = None
         self._current_page = 0
         self._document.close()
+        self._discard_temp_preview()
         self._name_label.setText("")
         self._page_view_label.clear()
         self._update_page_controls()
@@ -202,6 +246,19 @@ class _PreviewSlot(QWidget):
         return self._current_path
 
     # ------------------------------------------------------------- Internal --
+    def _discard_temp_preview(self) -> None:
+        """Deletes the current flattened preview copy, if any -- called
+        from clear(), after self._document.close() has already released
+        its handle on the file. (load(), which replaces one temp file
+        with another rather than clearing it, has its own inline version
+        of this with different, Windows-safe ordering -- see there.)"""
+        if self._temp_preview_path is not None:
+            try:
+                self._temp_preview_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            self._temp_preview_path = None
+
     def _on_status_changed(self, status: QPdfDocument.Status) -> None:
         if status == QPdfDocument.Status.Ready and self._current_path is not None:
             self._render_current_page()
